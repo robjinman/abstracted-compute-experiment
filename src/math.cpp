@@ -1,0 +1,1140 @@
+#include <ostream>
+#include <cstring>
+#include <random>
+#include "math.hpp"
+#include "exception.hpp"
+
+namespace {
+
+bool arraysEqual(const double* A, const double* B, size_t size) {
+  for (size_t i = 0; i < size; ++i) {
+    if (A[i] != B[i]) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+size_t count(std::initializer_list<std::initializer_list<double>> X) {
+  [[maybe_unused]] size_t H = X.size();
+  DBG_ASSERT(H > 0);
+  [[maybe_unused]] size_t W = X.begin()->size();
+  DBG_ASSERT(W > 0);
+
+  size_t numElements = 0;
+
+  for ([[maybe_unused]] auto row : X) {
+    DBG_ASSERT(row.size() == W);
+    numElements += W;
+  }
+
+  return numElements;
+}
+
+size_t count(std::initializer_list<std::initializer_list<std::initializer_list<double>>> X) {
+  [[maybe_unused]] size_t H = X.size();
+  DBG_ASSERT(H > 0);
+  [[maybe_unused]] size_t W = X.begin()->size();
+  DBG_ASSERT(W > 0);
+  size_t D = X.begin()->begin()->size();
+  DBG_ASSERT(D > 0);
+
+  size_t numElements = 0;
+
+  for (auto row : X) {
+    DBG_ASSERT(row.size() == W);
+
+    for ([[maybe_unused]] auto zLine : row) {
+      DBG_ASSERT(zLine.size() == D);
+      numElements += D;
+    }
+  }
+
+  return numElements;
+}
+
+}
+
+DataArray::DataArray()
+  : m_data(nullptr)
+  , m_size(0) {}
+
+DataArray::DataArray(size_t size)
+  : m_data(new double[size])
+  , m_size(size) {
+
+  memset(m_data.get(), 0, m_size * sizeof(double));
+}
+
+DataArray::DataArray(const DataArray& cpy)
+  : m_data(new double[cpy.m_size])
+  , m_size(cpy.m_size) {
+
+  memcpy(m_data.get(), cpy.m_data.get(), m_size * sizeof(double));
+}
+
+DataArray::DataArray(DataArray&& mv)
+  : m_data(std::move(mv.m_data))
+  , m_size(mv.m_size) {
+
+  mv.m_size = 0;
+}
+
+DataArray& DataArray::operator=(const DataArray& rhs) {
+  m_size = rhs.m_size;
+  m_data.reset(new double[m_size]);
+  memcpy(m_data.get(), rhs.m_data.get(), m_size * sizeof(double));
+
+  return *this;
+}
+
+DataArray& DataArray::operator=(DataArray&& rhs) {
+  m_size = rhs.m_size;
+  m_data = std::move(rhs.m_data);
+
+  rhs.m_size = 0;
+
+  return *this;
+}
+
+DataArray DataArray::concat(const DataArray& A, const DataArray& B) {
+  DataArray C(A.size() + B.size());
+
+  double* ptr = C.m_data.get();
+  memcpy(ptr, A.m_data.get(), A.size() * sizeof(double));
+  ptr += A.size();
+  memcpy(ptr, B.m_data.get(), B.size() * sizeof(double));
+
+  return C;
+}
+
+std::ostream& operator<<(std::ostream& os, const DataArray& v) {
+  os << "[ ";
+  for (size_t i = 0; i < v.size(); ++i) {
+    os << v[i] << " ";
+  }
+  os << "]" << std::endl;
+
+  return os;
+}
+
+Vector::Vector(std::initializer_list<double> data)
+  : m_storage(data.size())
+  , m_data(m_storage.data())
+  , m_size(data.size()) {
+
+  size_t i = 0;
+  for (double x : data) {
+    m_data[i++] = x;
+  }
+}
+
+Vector::Vector(size_t length)
+  : m_storage(length)
+  , m_data(m_storage.data())
+  , m_size(length) {}
+
+Vector::Vector(double* data, size_t size)
+  : m_data(data)
+  , m_size(size) {}
+
+Vector::Vector(const DataArray& data)
+  : m_storage(data)
+  , m_data(m_storage.data())
+  , m_size(m_storage.size()) {}
+
+Vector::Vector(DataArray&& data)
+  : m_storage(std::move(data))
+  , m_data(m_storage.data())
+  , m_size(m_storage.size()) {}
+
+Vector::Vector(const Vector& cpy)
+  : m_storage(cpy.m_size)
+  , m_data(m_storage.data())
+  , m_size(cpy.m_size) {
+
+  memcpy(m_data, cpy.m_data, m_size * sizeof(double));
+}
+
+Vector::Vector(Vector&& mv) {
+  m_size = mv.m_size;
+
+  if (mv.isShallow()) {
+    m_storage = DataArray(m_size);
+    m_data = m_storage.data();
+    memcpy(m_data, mv.m_data, m_size * sizeof(double));
+  }
+  else {
+    m_storage = std::move(mv.m_storage);
+    m_data = m_storage.data();
+    
+    mv.m_data = nullptr;
+    mv.m_size = 0;
+  }
+}
+
+Vector& Vector::operator=(const Vector& rhs) {
+  if (isShallow()) {
+    DBG_ASSERT(rhs.size() == m_size);
+  }
+  else {
+    m_size = rhs.m_size;
+    m_storage = DataArray(m_size);
+    m_data = m_storage.data();
+  }
+
+  memcpy(m_data, rhs.m_data, m_size * sizeof(double));
+
+  return *this;
+}
+
+Vector& Vector::operator=(Vector&& rhs) {
+  if (isShallow() || rhs.isShallow()) {
+    return this->operator=(rhs);
+  }
+
+  m_size = rhs.m_size;
+  m_storage = std::move(rhs.m_storage);
+  m_data = m_storage.data();
+
+  rhs.m_data = nullptr;
+  rhs.m_size = 0;
+
+  return *this;
+}
+
+bool Vector::operator==(const Vector& rhs) const {
+  if (m_size != rhs.m_size) {
+    return false;
+  }
+
+  return arraysEqual(m_data, rhs.m_data, m_size);
+}
+
+double Vector::magnitude() const {
+  return sqrt(squareMagnitude());
+}
+
+double Vector::squareMagnitude() const {
+  double sqSum = 0.0;
+  for (size_t i = 0; i < m_size; ++i) {
+    double x = m_data[i];
+    sqSum += x * x;
+  }
+  return sqSum;
+}
+
+void Vector::zero() {
+  memset(m_data, 0, m_size * sizeof(double));
+}
+
+void Vector::fill(double x) {
+  for (size_t i = 0; i < m_size; ++i) {
+    m_data[i] = x;
+  }
+}
+
+Vector& Vector::randomize(double standardDeviation) {
+  static std::mt19937 gen(0);
+  std::normal_distribution<double> dist(0.0, standardDeviation);
+
+  for (size_t i = 0; i < m_size; ++i) {
+    m_data[i] = dist(gen);
+  }
+  
+  return *this;
+}
+
+void Vector::normalize() {
+  double mag = magnitude();
+  for (size_t i = 0; i < m_size; ++i) {
+    m_data[i] = m_data[i] / mag;
+  }
+}
+
+double Vector::dot(const Vector& rhs) const {
+  DBG_ASSERT(rhs.m_size == m_size);
+
+  double x = 0.0;
+  for (size_t i = 0; i < m_size; ++i) {
+    x += m_data[i] * rhs[i];
+  }
+  return x;
+}
+
+Vector Vector::hadamard(const Vector& rhs) const {
+  DBG_ASSERT(rhs.m_size == m_size);
+
+  Vector v(m_size);
+  for (size_t i = 0; i < m_size; ++i) {
+    v[i] = m_data[i] * rhs[i];
+  }
+  return v;
+}
+
+Vector Vector::operator+(const Vector& rhs) const {
+  DBG_ASSERT(rhs.m_size == m_size);
+
+  Vector v(m_size);
+  for (size_t i = 0; i < m_size; ++i) {
+    v[i] = m_data[i] + rhs[i];
+  }
+  return v;
+}
+
+Vector Vector::operator-(const Vector& rhs) const {
+  DBG_ASSERT(rhs.m_size == m_size);
+
+  Vector v(m_size);
+  for (size_t i = 0; i < m_size; ++i) {
+    v[i] = m_data[i] - rhs[i];
+  }
+  return v;
+}
+
+Vector Vector::operator*(double s) const {
+  Vector v(m_size);
+  for (size_t i = 0; i < m_size; ++i) {
+    v[i] = m_data[i] * s;
+  }
+  return v;
+}
+
+Vector Vector::operator+(double s) const {
+  Vector v(m_size);
+  for (size_t i = 0; i < m_size; ++i) {
+    v[i] = m_data[i] + s;
+  }
+  return v;
+}
+
+Vector Vector::operator-(double s) const {
+  Vector v(m_size);
+  for (size_t i = 0; i < m_size; ++i) {
+    v[i] = m_data[i] - s;
+  }
+  return v;
+}
+
+Vector& Vector::operator+=(const Vector& rhs) {
+  for (size_t i = 0; i < m_size; ++i) {
+    m_data[i] += rhs.m_data[i];
+  }
+  return *this;
+}
+
+Vector& Vector::operator-=(const Vector& rhs) {
+  for (size_t i = 0; i < m_size; ++i) {
+    m_data[i] -= rhs.m_data[i];
+  }
+  return *this;
+}
+
+Vector& Vector::operator+=(double x) {
+  for (size_t i = 0; i < m_size; ++i) {
+    m_data[i] += x;
+  }
+  return *this;
+}
+
+Vector& Vector::operator-=(double x) {
+  for (size_t i = 0; i < m_size; ++i) {
+    m_data[i] -= x;
+  }
+  return *this;
+}
+
+Vector& Vector::operator*=(double x) {
+  for (size_t i = 0; i < m_size; ++i) {
+    m_data[i] *= x;
+  }
+  return *this;
+}
+
+Vector& Vector::operator/=(double x) {
+  for (size_t i = 0; i < m_size; ++i) {
+    m_data[i] /= x;
+  }
+  return *this;
+}
+
+double Vector::sum() const {
+  double s = 0.0;
+
+  for (size_t i = 0; i < m_size; ++i) {
+    s += m_data[i];
+  }
+
+  return s;
+}
+
+Vector Vector::computeTransform(const std::function<double(double)>& f) const {
+  Vector v(m_size);
+
+  for (size_t i = 0; i < m_size; ++i) {
+    v.m_data[i] = f(m_data[i]);
+  }
+
+  return v;
+}
+
+void Vector::transformInPlace(const std::function<double(double)>& f) {
+  for (size_t i = 0; i < m_size; ++i) {
+    m_data[i] = f(m_data[i]);
+  }
+}
+
+size_t Vector::serializedSize() const {
+  return sizeof(size_t)                   // type
+    + sizeof(size_t)                      // size
+    + m_storage.size() * sizeof(double);  // data
+}
+
+void Vector::serialize(uint8_t* buffer) {
+  size_t type = static_cast<size_t>(MathObjectType::Array);
+
+  uint8_t* cursor = buffer;
+  memcpy(cursor, &type, sizeof(type));
+  cursor += sizeof(type);
+  memcpy(cursor, &m_size, sizeof(m_size));
+  cursor += sizeof(m_size);
+  memcpy(cursor, m_data, m_size * sizeof(double));
+  m_data = reinterpret_cast<double*>(cursor);
+
+  // This is now a shallow vector
+  m_storage = DataArray();
+}
+
+VectorPtr Vector::deserialize(uint8_t* buffer) {
+  size_t type = 0;
+  size_t size = 0;
+
+  uint8_t* cursor = buffer;
+  memcpy(&type, cursor, sizeof(type));
+  cursor += sizeof(type);
+
+  ASSERT_MSG(type == static_cast<size_t>(MathObjectType::Array),
+    "Error deserializing Vector from buffer; incorrect type");
+
+  memcpy(&size, cursor, sizeof(size));
+  cursor += sizeof(size);
+
+  // Return shallow Vector (keep the data in the buffer)
+  return VectorPtr(new Vector(reinterpret_cast<double*>(cursor), size));
+}
+
+ConstVectorPtr Vector::deserialize(const uint8_t* buffer) {
+  size_t type = 0;
+  size_t size = 0;
+
+  const uint8_t* cursor = buffer;
+  memcpy(&type, cursor, sizeof(type));
+  cursor += sizeof(type);
+
+  ASSERT_MSG(type == static_cast<size_t>(MathObjectType::Array),
+    "Error deserializing Vector from buffer; incorrect type");
+
+  memcpy(&size, cursor, sizeof(size));
+  cursor += sizeof(size);
+
+  // Return shallow Vector (keep the data in the buffer)
+  return ConstVectorPtr(new Vector(const_cast<double*>(reinterpret_cast<const double*>(cursor)),
+    size));
+}
+
+VectorPtr Vector::createShallow(DataArray& data) {
+  return VectorPtr(new Vector(data.data(), data.size()));
+}
+
+ConstVectorPtr Vector::createShallow(const DataArray& data) {
+  return ConstVectorPtr(new Vector(const_cast<double*>(data.data()), data.size()));
+}
+
+std::ostream& operator<<(std::ostream& os, const Vector& v) {
+  os << "[ ";
+  for (size_t i = 0; i < v.size(); ++i) {
+    os << v[i] << " ";
+  }
+  os << "]" << std::endl;
+
+  return os;
+}
+
+Matrix::Matrix(std::initializer_list<std::initializer_list<double>> data)
+  : m_storage(count(data))
+  , m_data(m_storage.data())
+  , m_rows(data.size())
+  , m_cols(data.begin()->size()) {
+
+  size_t r = 0;
+  for (auto row : data) {
+    size_t c = 0;
+    for (double value : row) {
+      set(c, r, value);
+      ++c;
+    }
+    ++r;
+  }
+}
+
+Matrix::Matrix(size_t cols, size_t rows)
+  : m_storage(cols * rows)
+  , m_data(m_storage.data())
+  , m_rows(rows)
+  , m_cols(cols) {}
+
+Matrix::Matrix(double* data, size_t cols, size_t rows)
+  : m_data(data)
+  , m_rows(rows)
+  , m_cols(cols) {}
+
+Matrix::Matrix(const DataArray& data, size_t cols, size_t rows)
+  : m_storage(data)
+  , m_data(m_storage.data())
+  , m_rows(rows)
+  , m_cols(cols) {
+
+  DBG_ASSERT(m_storage.size() == size());  
+}
+
+Matrix::Matrix(DataArray&& data, size_t cols, size_t rows)
+  : m_storage(std::move(data))
+  , m_data(m_storage.data())
+  , m_rows(rows)
+  , m_cols(cols) {
+
+  DBG_ASSERT(m_storage.size() == size());  
+}
+
+Matrix::Matrix(const Matrix& cpy)
+  : m_storage(cpy.size())
+  , m_data(m_storage.data())
+  , m_rows(cpy.m_rows)
+  , m_cols(cpy.m_cols) {
+
+  memcpy(m_data, cpy.m_data, m_cols * m_rows * sizeof(double));
+}
+
+Matrix::Matrix(Matrix&& mv) {
+  m_cols = mv.m_cols;
+  m_rows = mv.m_rows;
+
+  if (mv.isShallow()) {
+    m_storage = DataArray(m_cols * m_rows);
+    m_data = m_storage.data();
+    memcpy(m_data, mv.m_data, m_cols * m_rows * sizeof(double));
+  }
+  else {
+    m_storage = std::move(mv.m_storage);
+    m_data = m_storage.data();
+    
+    mv.m_data = nullptr;
+    mv.m_cols = 0;
+    mv.m_rows = 0;
+  }
+}
+
+Matrix& Matrix::operator=(const Matrix& rhs) {
+  if (isShallow()) {
+    DBG_ASSERT(rhs.m_cols == m_cols && rhs.m_rows == m_rows);
+  }
+  else {
+    m_cols = rhs.m_cols;
+    m_rows = rhs.m_rows;
+    m_storage = DataArray(m_cols * m_rows);
+    m_data = m_storage.data();
+  }
+
+  memcpy(m_data, rhs.m_data, m_cols * m_rows * sizeof(double));
+
+  return *this;
+}
+
+Matrix& Matrix::operator=(Matrix&& rhs) {
+  if (isShallow() || rhs.isShallow()) {
+    return this->operator=(rhs);
+  }
+
+  m_cols = rhs.m_cols;
+  m_rows = rhs.m_rows;
+  m_storage = std::move(rhs.m_storage);
+  m_data = m_storage.data();
+
+  rhs.m_data = nullptr;
+  rhs.m_cols = 0;
+  rhs.m_rows = 0;
+
+  return *this;
+}
+
+Vector Matrix::operator*(const Vector& rhs) const {
+  DBG_ASSERT(rhs.size() == m_cols);
+
+  Vector v(m_rows);
+  for (size_t r = 0; r < m_rows; ++r) {
+    double sum = 0.0;
+    for (size_t c = 0; c < m_cols; ++c) {
+      sum += at(c, r) * rhs[c];
+    }
+    v[r] = sum;
+  }
+  return v;
+}
+
+Matrix Matrix::operator+(const Matrix& rhs) const {
+  DBG_ASSERT(rhs.m_cols == m_cols);
+  DBG_ASSERT(rhs.m_rows == m_rows);
+
+  Matrix m(m_cols, m_rows);
+
+  for (size_t i = 0; i < size(); ++i) {
+    m.m_data[i] = m_data[i] + rhs.m_data[i];
+  }
+
+  return m;
+}
+
+Matrix Matrix::operator-(const Matrix& rhs) const {
+  DBG_ASSERT(rhs.m_cols == m_cols);
+  DBG_ASSERT(rhs.m_rows == m_rows);
+
+  Matrix m(m_cols, m_rows);
+
+  for (size_t i = 0; i < size(); ++i) {
+    m.m_data[i] = m_data[i] - rhs.m_data[i];
+  }
+
+  return m;
+}
+
+Matrix& Matrix::operator+=(double x) {
+  for (size_t i = 0; i < size(); ++i) {
+    m_data[i] += x;
+  }
+  return *this;
+}
+
+Matrix& Matrix::operator-=(double x) {
+  for (size_t i = 0; i < size(); ++i) {
+    m_data[i] -= x;
+  }
+  return *this;
+}
+
+Matrix& Matrix::operator*=(double x) {
+  for (size_t i = 0; i < size(); ++i) {
+    m_data[i] *= x;
+  }
+  return *this;
+}
+
+Matrix& Matrix::operator/=(double x) {
+  for (size_t i = 0; i < size(); ++i) {
+    m_data[i] /= x;
+  }
+  return *this;
+}
+
+Matrix& Matrix::operator+=(const Matrix& rhs) {
+  for (size_t i = 0; i < size(); ++i) {
+    m_data[i] += rhs.m_data[i];
+  }
+  return *this;
+}
+
+Matrix& Matrix::operator-=(const Matrix& rhs) {
+  for (size_t i = 0; i < size(); ++i) {
+    m_data[i] -= rhs.m_data[i];
+  }
+  return *this;
+}
+
+Vector Matrix::transposeMultiply(const Vector& rhs) const {
+  DBG_ASSERT(rhs.size() == m_rows);
+
+  Vector v(m_cols);
+  for (size_t c = 0; c < m_cols; ++c) {
+    double sum = 0.0;
+    for (size_t r = 0; r < m_rows; ++r) {
+      sum += at(c, r) * rhs[r];
+    }
+    v[c] = sum;
+  }
+  return v;
+}
+
+void Matrix::zero() {
+  memset(m_data, 0, size() * sizeof(double));
+}
+
+void Matrix::fill(double x) {
+  for (size_t i = 0; i < size(); ++i) {
+    m_data[i] = x;
+  }
+}
+
+Matrix& Matrix::randomize(double standardDeviation) {
+  static std::mt19937 gen(0);
+  std::normal_distribution<double> dist(0.0, standardDeviation);
+
+  for (size_t i = 0; i < size(); ++i) {
+    m_data[i] = dist(gen);
+  }
+  
+  return *this;
+}
+
+double Matrix::sum() const {
+  double s = 0.0;
+
+  for (size_t i = 0; i < size(); ++i) {
+    s += m_data[i];
+  }
+
+  return s;
+}
+
+Matrix Matrix::transpose() const {
+  Matrix m(m_rows, m_cols);
+  for (size_t c = 0; c < m_cols; ++c) {
+    for (size_t r = 0; r < m_rows; ++r) {
+      m.set(r, c, at(c, r));
+    }
+  }
+  return m;
+}
+
+bool Matrix::operator==(const Matrix& rhs) const {
+  if (!(m_cols == rhs.m_cols && m_rows == rhs.m_rows)) {
+    return false;
+  }
+
+  return arraysEqual(m_data, rhs.m_data, size());
+}
+
+size_t Matrix::serializedSize() const {
+  return sizeof(size_t)                   // type
+    + sizeof(size_t)                      // columns
+    + sizeof(size_t)                      // rows
+    + m_storage.size() * sizeof(double);  // data
+}
+
+void Matrix::serialize(uint8_t* buffer) {
+  size_t type = static_cast<size_t>(MathObjectType::Array2);
+
+  uint8_t* cursor = buffer;
+  memcpy(cursor, &type, sizeof(type));
+  cursor += sizeof(type);
+  memcpy(cursor, &m_cols, sizeof(m_cols));
+  cursor += sizeof(m_cols);
+  memcpy(cursor, &m_rows, sizeof(m_rows));
+  cursor += sizeof(m_rows);
+  memcpy(cursor, m_data, m_rows * m_cols * sizeof(double));
+  m_data = reinterpret_cast<double*>(cursor);
+
+  // This is now a shallow matrix
+  m_storage = DataArray();
+}
+
+MatrixPtr Matrix::deserialize(uint8_t* buffer) {
+  size_t type = 0;
+  size_t cols = 0;
+  size_t rows = 0;
+
+  uint8_t* cursor = buffer;
+  memcpy(&type, cursor, sizeof(type));
+  cursor += sizeof(type);
+
+  ASSERT_MSG(type == static_cast<size_t>(MathObjectType::Array2),
+    "Error deserializing Matrix from buffer; incorrect type");
+
+  memcpy(&cols, cursor, sizeof(cols));
+  cursor += sizeof(cols);
+  memcpy(&rows, cursor, sizeof(rows));
+  cursor += sizeof(rows);
+
+  // Return shallow Matrix (keep the data in the buffer)
+  return MatrixPtr(new Matrix(reinterpret_cast<double*>(cursor), cols, rows));
+}
+
+ConstMatrixPtr Matrix::deserialize(const uint8_t* buffer) {
+  size_t type = 0;
+  size_t cols = 0;
+  size_t rows = 0;
+
+  const uint8_t* cursor = buffer;
+  memcpy(&type, cursor, sizeof(type));
+  cursor += sizeof(type);
+
+  ASSERT_MSG(type == static_cast<size_t>(MathObjectType::Array2),
+    "Error deserializing Matrix from buffer; incorrect type");
+
+  memcpy(&cols, cursor, sizeof(cols));
+  cursor += sizeof(cols);
+  memcpy(&rows, cursor, sizeof(rows));
+  cursor += sizeof(rows);
+
+  // Return shallow Matrix (keep the data in the buffer)
+  return ConstMatrixPtr(new Matrix(const_cast<double*>(reinterpret_cast<const double*>(cursor)),
+    cols, rows));
+}
+
+MatrixPtr Matrix::createShallow(DataArray& data, size_t cols, size_t rows) {
+  DBG_ASSERT(data.size() == cols * rows);
+  return MatrixPtr(new Matrix(data.data(), cols, rows));
+}
+
+ConstMatrixPtr Matrix::createShallow(const DataArray& data, size_t cols, size_t rows) {
+  DBG_ASSERT(data.size() == cols * rows);
+  return ConstMatrixPtr(new Matrix(const_cast<double*>(data.data()), cols, rows));
+}
+
+std::ostream& operator<<(std::ostream& os, const Matrix& m) {
+  os << "[ ";
+  for (size_t j = 0; j < m.rows(); ++j) {
+    if (j > 0) {
+      os << "  ";
+    }
+    for (size_t i = 0; i < m.cols(); ++i) {
+      os << m.at(i, j) << " ";
+    }
+    if (j + 1 == m.rows()) {
+      os << "]";
+    }
+    os << std::endl;
+  }
+
+  return os;
+}
+
+Kernel::Kernel(std::initializer_list<std::initializer_list<std::initializer_list<double>>> data)
+  : m_storage(count(data))
+  , m_data(m_storage.data())
+  , m_D(data.size())
+  , m_H(data.begin()->size())
+  , m_W(data.begin()->begin()->size()) {
+
+  size_t z = 0;
+  for (auto plane : data) {
+    size_t y = 0;
+    for (auto row : plane) {
+      size_t x = 0;
+      for (double value : row) {
+        set(x, y, z, value);
+        ++x;
+      }
+      ++y;
+    }
+    ++z;
+  }
+}
+
+Kernel::Kernel(size_t W, size_t H, size_t D)
+  : m_storage(W * H * D)
+  , m_data(m_storage.data())
+  , m_D(D)
+  , m_H(H)
+  , m_W(W) {}
+
+Kernel::Kernel(const DataArray& data, size_t W, size_t H, size_t D)
+  : m_storage(data)
+  , m_data(m_storage.data())
+  , m_D(D)
+  , m_H(H)
+  , m_W(W) {
+
+  DBG_ASSERT(m_storage.size() == size());    
+}
+
+Kernel::Kernel(DataArray&& data, size_t W, size_t H, size_t D)
+  : m_storage(std::move(data))
+  , m_data(m_storage.data())
+  , m_D(D)
+  , m_H(H)
+  , m_W(W) {
+
+  DBG_ASSERT(m_storage.size() == size());    
+}
+
+Kernel::Kernel(double* data, size_t W, size_t H, size_t D)
+  : m_data(data)
+  , m_D(D)
+  , m_H(H)
+  , m_W(W) {}
+
+Kernel::Kernel(const Kernel& cpy)
+  : m_storage(cpy.size())
+  , m_data(m_storage.data())
+  , m_D(cpy.m_D)
+  , m_H(cpy.m_H)
+  , m_W(cpy.m_W) {
+
+  memcpy(m_data, cpy.m_data, m_W * m_H * m_D * sizeof(double));
+}
+
+Kernel::Kernel(Kernel&& mv) {
+  m_W = mv.m_W;
+  m_H = mv.m_H;
+  m_D = mv.m_D;
+
+  if (mv.isShallow()) {
+    m_storage = DataArray(m_W * m_H * m_D);
+    m_data = m_storage.data();
+    memcpy(m_data, mv.m_data, m_W * m_H * m_D * sizeof(double));
+  }
+  else {
+    m_storage = std::move(mv.m_storage);
+    m_data = m_storage.data();
+    
+    mv.m_data = nullptr;
+    mv.m_W = 0;
+    mv.m_H = 0;
+    mv.m_D = 0;
+  }
+}
+
+void Kernel::convolve(const Array3& image, Array2& featureMap) const {
+  DBG_ASSERT(image.W() >= m_W);
+  DBG_ASSERT(image.H() >= m_H);
+  DBG_ASSERT(image.D() == m_D);
+
+  size_t fmW = image.W() - m_W + 1;
+  size_t fmH = image.H() - m_H + 1;
+
+  DBG_ASSERT(featureMap.W() == fmW);
+  DBG_ASSERT(featureMap.H() == fmH);
+
+  for (size_t fmY = 0; fmY < fmH; ++fmY) {
+    for (size_t fmX = 0; fmX < fmW; ++fmX) {
+      double sum = 0.0;
+      for (size_t k = 0; k < m_D; ++k) {
+        for (size_t j = 0; j < m_H; ++j) {
+          for (size_t i = 0; i < m_W; ++i) {
+            sum += image.at(fmX + i, fmY + j, k) * at(i, j, k);
+          }
+        }
+      }
+      featureMap.set(fmX, fmY, sum);
+    }
+  }
+}
+
+bool Kernel::operator==(const Kernel& rhs) const {
+  if (!(m_W == rhs.m_W && m_H == rhs.m_H && m_D == rhs.m_D)) {
+    return false;
+  }
+
+  return arraysEqual(m_data, rhs.m_data, size());
+}
+
+Kernel& Kernel::operator=(const Kernel& rhs) {
+  if (isShallow()) {
+    DBG_ASSERT(rhs.m_W == m_W && rhs.m_H == m_H && rhs.m_D == m_D);
+  }
+  else {
+    m_W = rhs.m_W;
+    m_H = rhs.m_H;
+    m_D = rhs.m_D;
+    m_storage = DataArray(m_W * m_H * m_D);
+    m_data = m_storage.data();
+  }
+
+  memcpy(m_data, rhs.m_data, m_W * m_H * m_D * sizeof(double));
+
+  return *this;
+}
+
+Kernel& Kernel::operator=(Kernel&& rhs) {
+  if (isShallow() || rhs.isShallow()) {
+    return this->operator=(rhs);
+  }
+
+  m_W = rhs.m_W;
+  m_H = rhs.m_H;
+  m_D = rhs.m_D;
+  m_storage = std::move(rhs.m_storage);
+  m_data = m_storage.data();
+
+  rhs.m_data = nullptr;
+  rhs.m_W = 0;
+  rhs.m_H = 0;
+  rhs.m_D = 0;
+
+  return *this;
+}
+
+void Kernel::zero() {
+  memset(m_data, 0, size() * sizeof(double));
+}
+
+void Kernel::fill(double x) {
+  for (size_t i = 0; i < size(); ++i) {
+    m_data[i] = x;
+  }
+}
+
+Kernel& Kernel::randomize(double standardDeviation) {
+  static std::mt19937 gen(0);
+  std::normal_distribution<double> dist(0.0, standardDeviation);
+
+  for (size_t i = 0; i < size(); ++i) {
+    m_data[i] = dist(gen);
+  }
+
+  return *this;
+}
+
+Kernel Kernel::operator+(const Kernel& rhs) const {
+  Kernel K(m_W, m_H, m_D);
+  for (size_t i = 0; i < size(); ++i) {
+    K.m_data[i] = m_data[i] + rhs.m_data[i];
+  }
+  return K;
+}
+
+Kernel Kernel::operator-(const Kernel& rhs) const {
+  Kernel K(m_W, m_H, m_D);
+  for (size_t i = 0; i < size(); ++i) {
+    K.m_data[i] = m_data[i] - rhs.m_data[i];
+  }
+  return K;
+}
+
+Kernel Kernel::operator+(double x) const {
+  Kernel K(m_W, m_H, m_D);
+  for (size_t i = 0; i < size(); ++i) {
+    K.m_data[i] = m_data[i] + x;
+  }
+  return K;
+}
+
+Kernel Kernel::operator-(double x) const {
+  Kernel K(m_W, m_H, m_D);
+  for (size_t i = 0; i < size(); ++i) {
+    K.m_data[i] = m_data[i] - x;
+  }
+  return K;
+}
+
+Kernel Kernel::operator*(double x) const {
+  Kernel K(m_W, m_H, m_D);
+  for (size_t i = 0; i < size(); ++i) {
+    K.m_data[i] = m_data[i] * x;
+  }
+  return K;
+}
+
+Kernel Kernel::operator/(double x) const {
+  Kernel K(m_W, m_H, m_D);
+  for (size_t i = 0; i < size(); ++i) {
+    K.m_data[i] = m_data[i] / x;
+  }
+  return K;
+}
+
+Kernel& Kernel::operator+=(double x) {
+  for (size_t i = 0; i < size(); ++i) {
+    m_data[i] += x;
+  }
+  return *this;
+}
+
+Kernel& Kernel::operator-=(double x) {
+  for (size_t i = 0; i < size(); ++i) {
+    m_data[i] -= x;
+  }
+  return *this;
+}
+
+Kernel& Kernel::operator*=(double x) {
+  for (size_t i = 0; i < size(); ++i) {
+    m_data[i] *= x;
+  }
+  return *this;
+}
+
+Kernel& Kernel::operator/=(double x) {
+  for (size_t i = 0; i < size(); ++i) {
+    m_data[i] /= x;
+  }
+  return *this;
+}
+
+Kernel& Kernel::operator+=(const Kernel& rhs) {
+  for (size_t i = 0; i < size(); ++i) {
+    m_data[i] += rhs.m_data[i];
+  }
+  return *this;
+}
+
+Kernel& Kernel::operator-=(const Kernel& rhs) {
+  for (size_t i = 0; i < size(); ++i) {
+    m_data[i] -= rhs.m_data[i];
+  }
+  return *this;
+}
+
+Kernel Kernel::computeTransform(const std::function<double(double)>& f) const {
+  Kernel K(m_W, m_H, m_D);
+  for (size_t i = 0; i < size(); ++i) {
+    K.m_data[i] = f(m_data[i]);
+  }
+  return K;
+}
+
+void Kernel::transformInPlace(const std::function<double(double)>& f) {
+  for (size_t i = 0; i < size(); ++i) {
+    m_data[i] = f(m_data[i]);
+  }
+}
+
+size_t Kernel::serializedSize() const {
+  // TODO
+}
+
+void Kernel::serialize(uint8_t* buffer) {
+  // TODO
+}
+
+KernelPtr Kernel::deserialize(uint8_t* buffer) {
+  // TODO
+}
+
+ConstKernelPtr Kernel::deserialize(const uint8_t* buffer) {
+  // TODO
+}
+
+KernelPtr Kernel::createShallow(DataArray& data, size_t W, size_t H, size_t D) {
+  DBG_ASSERT(data.size() == W * H * D);
+  return std::unique_ptr<Kernel>(new Kernel(data.data(), W, H, D));
+}
+
+ConstKernelPtr Kernel::createShallow(const DataArray& data, size_t W, size_t H, size_t D) {
+  DBG_ASSERT(data.size() == W * H * D);
+  return std::unique_ptr<const Kernel>(new Kernel(const_cast<double*>(data.data()), W, H, D));
+}
+
+std::ostream& operator<<(std::ostream& os, const Kernel& k) {
+  os << "[" << std::endl;
+
+  for (size_t z = 0; z < k.D(); ++z) {
+    os << "[ ";
+    for (size_t y = 0; y < k.H(); ++y) {
+      for (size_t x = 0; x < k.W(); ++x) {
+        os << k.at(x, y, z) << " ";
+      }
+      if (y + 1 == k.H()) {
+        os << "]";
+      }
+      os << std::endl;
+    }
+    if (z + 1 == k.D()) {
+      os << "]";
+    }
+    os << std::endl;
+  }
+
+  return os;
+}
+
