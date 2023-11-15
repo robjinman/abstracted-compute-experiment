@@ -114,7 +114,7 @@ std::ostream& operator<<(std::ostream& os, const DataArray& v) {
   for (size_t i = 0; i < v.size(); ++i) {
     os << v[i] << " ";
   }
-  os << "]" << std::endl;
+  os << "]";
 
   return os;
 }
@@ -456,7 +456,7 @@ std::ostream& operator<<(std::ostream& os, const Vector& v) {
   for (size_t i = 0; i < v.size(); ++i) {
     os << v[i] << " ";
   }
-  os << "]" << std::endl;
+  os << "]";
 
   return os;
 }
@@ -802,7 +802,6 @@ std::ostream& operator<<(std::ostream& os, const Matrix& m) {
     if (j + 1 == m.rows()) {
       os << "]";
     }
-    os << std::endl;
   }
 
   return os;
@@ -1132,7 +1131,6 @@ std::ostream& operator<<(std::ostream& os, const Kernel& k) {
     if (z + 1 == k.D()) {
       os << "]";
     }
-    os << std::endl;
   }
 
   return os;
