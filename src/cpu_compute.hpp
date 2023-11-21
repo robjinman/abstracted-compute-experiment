@@ -4,4 +4,3 @@
 
 class Logger;
 ExecutorPtr createCpuExecutor(Logger& logger);
-

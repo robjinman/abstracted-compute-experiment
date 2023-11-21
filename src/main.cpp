@@ -1,4 +1,3 @@
-#include <iostream>
 #include "cpu_compute.hpp"
 #include "logger.hpp"
 
