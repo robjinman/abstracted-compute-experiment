@@ -1,15 +1,16 @@
 #pragma once
 
+#include "exception.hpp"
+#include "types.hpp"
 #include <memory>
 #include <initializer_list>
 #include <stdexcept>
 #include <functional>
-#include "exception.hpp"
 
 enum class MathObjectType {
-  Array = 101,
-  Array2 = 102,
-  Array3 = 103
+  Array,
+  Array2,
+  Array3
 };
 
 class DataArray {
@@ -24,7 +25,6 @@ class DataArray {
 
     inline double* data();
     inline const double* data() const;
-    inline std::unique_ptr<double[]>& uniquePtr();
 
     inline size_t size() const;
 
@@ -68,8 +68,6 @@ using ArrayPtr = VectorPtr;
 using ConstArrayPtr = ConstVectorPtr;
 
 class Vector {
-  friend class Matrix;
-
   public:
     explicit Vector(std::initializer_list<double> data);
     explicit Vector(size_t length);
@@ -77,6 +75,10 @@ class Vector {
     Vector(DataArray&& data);
     Vector(const Vector& cpy);
     Vector(Vector&& mv);
+    Vector(double* data, size_t size, bool copyData);
+
+    inline MathObjectType type() const;
+    inline Triple shape() const;
 
     inline bool isShallow() const;
     inline const DataArray& storage() const;
@@ -84,6 +86,10 @@ class Vector {
 
     inline double* data();
     inline const double* data() const;
+
+    // This will free the old data and the object will now be shallow. Tbe new data array must have
+    // the same size as the old one.
+    void setDataPtr(double* data);
 
     Vector& operator=(const Vector& rhs);
     Vector& operator=(Vector&& rhs);
@@ -127,30 +133,27 @@ class Vector {
     Vector computeTransform(const std::function<double(double)>& f) const;
     void transformInPlace(const std::function<double(double)>& f);
 
-    // Returns shallow Vector
-    inline VectorPtr subvector(size_t from, size_t size);
-    inline ConstVectorPtr subvector(size_t from, size_t size) const;
-
-    size_t serializedSize() const;
-    // Vector becomes shallow and data is owned by the buffer
-    void serialize(uint8_t* buffer);
+    inline VectorPtr subvector(size_t from, size_t size, bool copyData);
+    inline ConstVectorPtr subvector(size_t from, size_t size, bool copyData) const;
 
     static VectorPtr createShallow(DataArray& data);
     static ConstVectorPtr createShallow(const DataArray& data);
 
-    // Shallow vector from serialized
-    static VectorPtr deserialize(uint8_t* buffer);
-    static ConstVectorPtr deserialize(const uint8_t* buffer);
-
     friend std::ostream& operator<<(std::ostream& os, const Vector& v);
 
   private:
-    Vector(double* data, size_t size);
-
     DataArray m_storage;
     double* m_data;
     size_t m_size;
 };
+
+MathObjectType Vector::type() const {
+  return MathObjectType::Array;
+}
+
+Triple Vector::shape() const {
+  return { m_size, 1, 1 };
+}
 
 bool Vector::isShallow() const {
   return m_storage.size() == 0;
@@ -188,12 +191,12 @@ bool Vector::operator!=(const Vector& rhs) const {
   return !(*this == rhs);
 }
 
-VectorPtr Vector::subvector(size_t from, size_t size) {
-  return VectorPtr(new Vector(m_data + from, size));
+VectorPtr Vector::subvector(size_t from, size_t size, bool copyData) {
+  return VectorPtr(new Vector(m_data + from, size, copyData));
 }
 
-ConstVectorPtr Vector::subvector(size_t from, size_t size) const {
-  return ConstVectorPtr(new Vector(m_data + from, size));
+ConstVectorPtr Vector::subvector(size_t from, size_t size, bool copyData) const {
+  return ConstVectorPtr(new Vector(m_data + from, size, copyData));
 }
 
 class Matrix;
@@ -204,8 +207,6 @@ using Array2Ptr = MatrixPtr;
 using ConstArray2Ptr = ConstMatrixPtr;
 
 class Matrix {
-  friend class Kernel;
-
   public:
     explicit Matrix(std::initializer_list<std::initializer_list<double>> data);
     explicit Matrix(size_t cols, size_t rows);
@@ -213,6 +214,10 @@ class Matrix {
     Matrix(DataArray&& data, size_t cols, size_t rows);
     Matrix(const Matrix& cpy);
     Matrix(Matrix&& mv);
+    Matrix(double* data, size_t cols, size_t rows, bool copyData);
+
+    inline MathObjectType type() const;
+    inline Triple shape() const;
 
     inline bool isShallow() const;
     inline const DataArray& storage() const;
@@ -220,6 +225,10 @@ class Matrix {
 
     inline double* data();
     inline const double* data() const;
+
+    // This will free the old data and the object will now be shallow. Tbe new data array must have
+    // the same size as the old one.
+    void setDataPtr(double* data);
 
     inline size_t size() const;
 
@@ -264,33 +273,31 @@ class Matrix {
     Matrix computeTransform(const std::function<double(double)>& f) const;
     void transformInPlace(const std::function<double(double)>& f);
 
-    // Returns shallow Vector
-    inline VectorPtr slice(size_t row);
-    inline ConstVectorPtr slice(size_t row) const;
+    inline VectorPtr slice(size_t row, bool copyData);
+    inline ConstVectorPtr slice(size_t row, bool copyData) const;
 
     bool operator==(const Matrix& rhs) const;
     inline bool operator!=(const Matrix& rhs) const;
 
-    size_t serializedSize() const;
-    // Matrix becomes shallow and data is owned by the buffer
-    void serialize(uint8_t* buffer);
-
     static MatrixPtr createShallow(DataArray& data, size_t cols, size_t rows);
     static ConstMatrixPtr createShallow(const DataArray& data, size_t cols, size_t rows);
 
-    static MatrixPtr deserialize(uint8_t* buffer);
-    static ConstMatrixPtr deserialize(const uint8_t* buffer);
-
     friend std::ostream& operator<<(std::ostream& os, const Matrix& m);
 
-  private:
-    Matrix(double* data, size_t cols, size_t rows);
-  
+  private: 
     DataArray m_storage;
     double* m_data;
     size_t m_rows;
     size_t m_cols;
 };
+
+MathObjectType Matrix::type() const {
+  return MathObjectType::Array2;
+}
+
+Triple Matrix::shape() const {
+  return { m_cols, m_rows, 1 };
+}
 
 bool Matrix::isShallow() const {
   return m_storage.size() == 0;
@@ -340,12 +347,12 @@ size_t Matrix::H() const {
   return m_rows;
 }
 
-VectorPtr Matrix::slice(size_t row) {
-  return VectorPtr(new Vector(m_data + row * m_cols, m_cols));
+VectorPtr Matrix::slice(size_t row, bool copyData) {
+  return VectorPtr(new Vector(m_data + row * m_cols, m_cols, copyData));
 }
 
-ConstVectorPtr Matrix::slice(size_t row) const {
-  return ConstVectorPtr(new Vector(m_data + row * m_cols, m_cols));
+ConstVectorPtr Matrix::slice(size_t row, bool copyData) const {
+  return ConstVectorPtr(new Vector(m_data + row * m_cols, m_cols, copyData));
 }
 
 bool Matrix::operator!=(const Matrix& rhs) const {
@@ -368,6 +375,10 @@ class Kernel {
     Kernel(DataArray&& data, size_t W, size_t H, size_t D);
     Kernel(const Kernel& cpy);
     Kernel(Kernel&& mv);
+    Kernel(double* data, size_t W, size_t H, size_t D, bool copyData);
+
+    inline MathObjectType type() const;
+    inline Triple shape() const;
 
     inline void setData(DataArray&& data);
 
@@ -377,6 +388,10 @@ class Kernel {
 
     inline double* data();
     inline const double* data() const;
+
+    // This will free the old data and the object will now be shallow. Tbe new data array must have
+    // the same size as the old one.
+    void setDataPtr(double* data);
 
     inline size_t size() const;
 
@@ -413,29 +428,20 @@ class Kernel {
     Kernel computeTransform(const std::function<double(double)>& f) const;
     void transformInPlace(const std::function<double(double)>& f);
 
-    inline MatrixPtr slice(size_t z);
-    inline ConstMatrixPtr slice(size_t z) const;
+    inline MatrixPtr slice(size_t z, bool copyData);
+    inline ConstMatrixPtr slice(size_t z, bool copyData) const;
 
     bool operator==(const Kernel& rhs) const;
     inline bool operator!=(const Kernel& rhs) const;
 
     void convolve(const Array3& image, Array2& featureMap) const;
 
-    size_t serializedSize() const;
-    // Kernel becomes shallow and data is owned by the buffer
-    void serialize(uint8_t* buffer);
-
     static KernelPtr createShallow(DataArray& data, size_t W, size_t H, size_t D);
     static ConstKernelPtr createShallow(const DataArray& data, size_t W, size_t H, size_t D);
-
-    static KernelPtr deserialize(uint8_t* buffer);
-    static ConstKernelPtr deserialize(const uint8_t* buffer);
 
     friend std::ostream& operator<<(std::ostream& os, const Kernel& k);
 
   private:
-    Kernel(double* data, size_t W, size_t H, size_t D);
-
     DataArray m_storage;
     double* m_data;
     size_t m_D;
@@ -443,7 +449,15 @@ class Kernel {
     size_t m_W;
 };
 
-inline void Kernel::setData(DataArray&& data) {
+MathObjectType Kernel::type() const {
+  return MathObjectType::Array3;
+}
+
+Triple Kernel::shape() const {
+  return { m_W, m_H, m_D };
+}
+
+void Kernel::setData(DataArray&& data) {
   DBG_ASSERT(data.size() == size());
 
   m_storage = std::move(data);
@@ -494,12 +508,12 @@ size_t Kernel::D() const {
   return m_D;
 }
 
-MatrixPtr Kernel::slice(size_t z) {
-  return MatrixPtr(new Matrix(m_data + z * m_W * m_H, m_W, m_H));
+MatrixPtr Kernel::slice(size_t z, bool copyData) {
+  return MatrixPtr(new Matrix(m_data + z * m_W * m_H, m_W, m_H, copyData));
 }
 
-ConstMatrixPtr Kernel::slice(size_t z) const {
-  return ConstMatrixPtr(new Matrix(m_data + z * m_W * m_H, m_W, m_H));
+ConstMatrixPtr Kernel::slice(size_t z, bool copyData) const {
+  return ConstMatrixPtr(new Matrix(m_data + z * m_W * m_H, m_W, m_H, copyData));
 }
 
 bool Kernel::operator!=(const Kernel& rhs) const {

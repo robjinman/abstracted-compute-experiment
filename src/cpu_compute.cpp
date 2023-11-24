@@ -1,12 +1,49 @@
-#include <variant>
-#include <functional>
 #include "cpu_compute.hpp"
 #include "exception.hpp"
 #include "logger.hpp"
+#include "utils.hpp"
+#include <variant>
+#include <map>
+#include <functional>
 
 namespace {
 
-using CpuComputationStepFn = std::function<void(uint8_t*)>;
+using MathObjectPtr = std::variant<ArrayPtr, Array2Ptr, Array3Ptr>;
+
+class CpuBuffer : public Buffer {
+  public:
+    struct Entry {
+      size_t index;
+      MathObjectType type;
+    };
+
+    void insert(const std::string& name, Array& object) override;
+    void insert(const std::string& name, Array2& object) override;
+    void insert(const std::string& name, Array3& object) override;
+
+    std::vector<MathObjectPtr> items;
+    std::map<std::string, Entry> entries;
+};
+
+void CpuBuffer::insert(const std::string& name, Array& item) {
+  size_t index = items.size();
+  items.push_back(Array::createShallow(item.storage()));
+  entries[name] = Entry{ index, MathObjectType::Array };
+}
+
+void CpuBuffer::insert(const std::string& name, Array2& item) {
+  size_t index = items.size();
+  items.push_back(Array2::createShallow(item.storage(), item.cols(), item.rows()));
+  entries[name] = Entry{ index, MathObjectType::Array2 };
+}
+
+void CpuBuffer::insert(const std::string& name, Array3& item) {
+  size_t index = items.size();
+  items.push_back(Array3::createShallow(item.storage(), item.W(), item.H(), item.D()));
+  entries[name] = Entry{ index, MathObjectType::Array3 };
+}
+
+using CpuComputationStepFn = std::function<void()>;
 
 struct CpuComputationStep {
   std::string command;
@@ -31,96 +68,25 @@ class CpuExecutor : public Executor {
     Logger& m_logger;
 };
 
-void matVecMultiply(uint8_t* buffer, size_t outOffset, size_t mOffset, size_t vOffset) {
-  ConstMatrixPtr pM = Matrix::deserialize(buffer + mOffset);
-  ConstVectorPtr pV = Vector::deserialize(buffer + vOffset);
-  VectorPtr pResult = Vector::deserialize(buffer + outOffset);
-
-  const Matrix& M = *pM;
-  const Vector& V = *pV;
-  Vector& result = *pResult;
-
-  result = M * V;
-}
-
-void vecFloatMultiply(uint8_t* buffer, size_t outOffset, size_t vOffset, double x) {
-  ConstVectorPtr pV = Vector::deserialize(buffer + vOffset);
-  VectorPtr pResult = Vector::deserialize(buffer + outOffset);
-
-  const Vector& V = *pV;
-  Vector& result = *pResult;
-
-  result = V * x;
-}
-
-void vecAdd(uint8_t* buffer, size_t outOffset, size_t aOffset, size_t bOffset) {
-  ConstVectorPtr pA = Vector::deserialize(buffer + aOffset);
-  ConstVectorPtr pB = Vector::deserialize(buffer + bOffset);
-  VectorPtr pResult = Vector::deserialize(buffer + outOffset);
-
-  const Vector& A = *pA;
-  const Vector& B = *pB;
-  Vector& result = *pResult;
-
-  result = A + B;
-}
-
-void trimLeft(std::string& s) {
-  s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char c) {
-    return !std::isspace(c);
-  }));
-}
-
-void trimRight(std::string& s) {
-  s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char c) {
-    return !std::isspace(c);
-  }).base(), s.end());
-}
-
-std::vector<std::string> tokenizeCommand(const std::string& command) {
-  std::stringstream ss(command);
-  std::vector<std::string> tokens;
-
-  std::string token;
-  std::getline(ss, token, '=');
-
-  trimLeft(token);
-  trimRight(token);
-
-  ASSERT_MSG(token.length() > 0, STR("Syntax error: " << command));
-  tokens.push_back(token);
-
-  while (std::getline(ss, token, ' ')) {
-    trimLeft(token);
-    trimRight(token);
-
-    if (token.length() > 0) {
-      tokens.push_back(token);
-    }
-  }
-
-  return tokens;
-}
-
 class Token {
   public:
     Token(double value);
-    Token(const BufferItem& bufferItem);
+    Token(const CpuBuffer::Entry& bufferEntry);
 
     bool isNumeric() const;
     double floatValue() const;
-    const BufferItem& bufferItem() const;
+    const CpuBuffer::Entry& bufferEntry() const;
 
   private:
-    std::variant<double, BufferItem> m_value;
+    std::variant<double, CpuBuffer::Entry> m_value;
 };
 
 Token::Token(double value)
   : m_value(value) {}
 
-Token::Token(const BufferItem& bufferItem)
-  : m_value(bufferItem) {}
-  
+Token::Token(const CpuBuffer::Entry& bufferEntry)
+  : m_value(bufferEntry) {}
+
 bool Token::isNumeric() const {
   return std::holds_alternative<double>(m_value);
 }
@@ -129,8 +95,8 @@ double Token::floatValue() const {
   return std::get<double>(m_value);
 }
 
-const BufferItem& Token::bufferItem() const {
-  return std::get<BufferItem>(m_value);
+const CpuBuffer::Entry& Token::bufferEntry() const {
+  return std::get<CpuBuffer::Entry>(m_value);
 }
 
 bool parseDouble(const std::string& strValue, double& value) {
@@ -139,20 +105,20 @@ bool parseDouble(const std::string& strValue, double& value) {
   return !ss.fail() && ss.eof();
 }
 
-Token parseToken(const Buffer& buffer, const std::string& strToken) {
+Token parseToken(const CpuBuffer& buffer, const std::string& strToken) {
   double value = 0;
   if (parseDouble(strToken, value)) {
     return value;
   }
   else {
-    return buffer.items.at(strToken);
+    return buffer.entries.at(strToken);
   }
 }
 
-CpuComputationStep compileMultiplyCommand(const Buffer& buffer,
+CpuComputationStep compileMultiplyCommand(const CpuBuffer& buffer,
   const std::vector<std::string>& tokens) {
 
-  const BufferItem& returnVal = buffer.items.at(tokens[0]);
+  const CpuBuffer::Entry& returnVal = buffer.entries.at(tokens[0]);
   const std::string& functionName = tokens[1];
   
   ASSERT(functionName == "multiply");
@@ -167,31 +133,31 @@ CpuComputationStep compileMultiplyCommand(const Buffer& buffer,
   if (arg1.isNumeric()) {
     EXCEPTION("No function 'multiply' matching argument types");
   }
-  else if (arg1.bufferItem().type == MathObjectType::Array) {
+  else if (arg1.bufferEntry().type == MathObjectType::Array) {
     if (arg2.isNumeric()) {
-      size_t outOffset = returnVal.offset;
+      Vector& R = *(std::get<VectorPtr>(buffer.items[returnVal.index]));
+      Vector& V = *(std::get<VectorPtr>(buffer.items[arg1.bufferEntry().index]));
       double x = arg2.floatValue();
-      size_t vOffset = arg1.bufferItem().offset;
 
-      step.function = [=](uint8_t* buf) {
-        vecFloatMultiply(buf, outOffset, vOffset, x);
+      step.function = [&R, &V, x]() {
+        R = V * x;
       };
     }
     else {
       EXCEPTION("No function 'multiply' matching argument types");
     }
   }
-  else if (arg1.bufferItem().type == MathObjectType::Array2) {
+  else if (arg1.bufferEntry().type == MathObjectType::Array2) {
     if (arg2.isNumeric()) {
       EXCEPTION("No function 'multiply' matching argument types");
     }
-    else if (arg2.bufferItem().type == MathObjectType::Array) {
-      size_t outOffset = returnVal.offset;
-      size_t aOffset = arg1.bufferItem().offset;
-      size_t bOffset = arg2.bufferItem().offset;
+    else if (arg2.bufferEntry().type == MathObjectType::Array) {
+      Vector& R = *(std::get<VectorPtr>(buffer.items[returnVal.index]));
+      Matrix& M = *(std::get<MatrixPtr>(buffer.items[arg1.bufferEntry().index]));
+      Vector& V = *(std::get<VectorPtr>(buffer.items[arg2.bufferEntry().index]));
 
-      step.function = [=](uint8_t* buf) {
-        matVecMultiply(buf, outOffset, aOffset, bOffset);
+      step.function = [&R, &M, &V]() {
+        R = M * V;
       };
     }
     else {
@@ -205,10 +171,10 @@ CpuComputationStep compileMultiplyCommand(const Buffer& buffer,
   return step;
 }
 
-CpuComputationStep compileAddCommand(const Buffer& buffer,
+CpuComputationStep compileAddCommand(const CpuBuffer& buffer,
   const std::vector<std::string>& tokens) {
 
-  const BufferItem& returnVal = buffer.items.at(tokens[0]);
+  const CpuBuffer::Entry& returnVal = buffer.entries.at(tokens[0]);
   const std::string& functionName = tokens[1];
   
   ASSERT(functionName == "add");
@@ -223,17 +189,17 @@ CpuComputationStep compileAddCommand(const Buffer& buffer,
   if (arg1.isNumeric()) {
     EXCEPTION("No function 'add' matching argument types");
   }
-  else if (arg1.bufferItem().type == MathObjectType::Array) {
+  else if (arg1.bufferEntry().type == MathObjectType::Array) {
     if (arg2.isNumeric()) {
       EXCEPTION("No function 'add' matching argument types");
     }
-    else if (arg2.bufferItem().type == MathObjectType::Array) {
-      size_t outOffset = returnVal.offset;
-      size_t aOffset = arg1.bufferItem().offset;
-      size_t bOffset = arg2.bufferItem().offset;
+    else if (arg2.bufferEntry().type == MathObjectType::Array) {
+      Vector& R = *(std::get<VectorPtr>(buffer.items[returnVal.index]));
+      Vector& A = *(std::get<VectorPtr>(buffer.items[arg1.bufferEntry().index]));
+      Vector& B = *(std::get<VectorPtr>(buffer.items[arg2.bufferEntry().index]));
 
-      step.function = [=](uint8_t* buf) {
-        vecAdd(buf, outOffset, aOffset, bOffset);
+      step.function = [&R, &A, &B]() {
+        R = A + B;
       };
     }
     else {
@@ -247,7 +213,9 @@ CpuComputationStep compileAddCommand(const Buffer& buffer,
   return step;
 }
 
-CpuComputationStep compileCommand(const Buffer& buffer, const std::string& command) {
+CpuComputationStep compileCommand(const Buffer& buf, const std::string& command) {
+  const auto& buffer = dynamic_cast<const CpuBuffer&>(buf);
+
   std::vector<std::string> tokens = tokenizeCommand(command);
 
   ASSERT(tokens.size() >= 2);
@@ -278,13 +246,13 @@ ComputationPtr CpuExecutor::compile(const Buffer& buffer, const ComputationDesc&
   return computation;
 }
 
-void CpuExecutor::execute(Buffer& buffer, const Computation& computation) const {
+void CpuExecutor::execute(Buffer&, const Computation& computation) const {
   const auto& c = dynamic_cast<const CpuComputation&>(computation);
   for (const auto& step : c.steps) {
 #ifndef NDEBUG
     m_logger.info(STR("Executing command: " << step.command));
 #endif
-    step.function(buffer.storage.data());
+    step.function();
   }
 }
 
@@ -294,3 +262,6 @@ ExecutorPtr createCpuExecutor(Logger& logger) {
   return std::make_unique<CpuExecutor>(logger);
 }
 
+BufferPtr createCpuBuffer() {
+  return std::make_unique<CpuBuffer>();
+}

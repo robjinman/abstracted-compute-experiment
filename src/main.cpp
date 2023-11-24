@@ -1,10 +1,12 @@
 #include "cpu_compute.hpp"
 #include "logger.hpp"
+#include "utils.hpp"
 
 int main() {
   LoggerPtr logger = createStdoutLogger();
 
   ExecutorPtr executor = createCpuExecutor(*logger);
+  BufferPtr buffer = createCpuBuffer();
 
   Matrix M({
     { 1, 2, 3, 4 },
@@ -16,12 +18,11 @@ int main() {
   Vector B({4, 3, 2});
   Vector C(3);
 
-  Buffer buffer; // TODO: Do this efficiently
-  buffer.insert("M", M);
-  buffer.insert("V", V);
-  buffer.insert("A", A);
-  buffer.insert("B", B);
-  buffer.insert("C", C);
+  buffer->insert("M", M);
+  buffer->insert("V", V);
+  buffer->insert("A", A);
+  buffer->insert("B", B);
+  buffer->insert("C", C);
 
   ComputationDesc comp1;
   comp1.steps = {
@@ -36,8 +37,8 @@ int main() {
 
   comp1.chain(comp2);
 
-  ComputationPtr c = executor->compile(buffer, comp1);
-  executor->execute(buffer, *c);
+  ComputationPtr c = executor->compile(*buffer, comp1);
+  executor->execute(*buffer, *c);
 
   logger->info(STR(C));
 

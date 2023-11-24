@@ -1,24 +1,20 @@
 #pragma once
 
+#include "math.hpp"
 #include <string>
-#include <map>
 #include <memory>
 #include <vector>
-#include "math.hpp"
 
-struct BufferItem {
-  MathObjectType type;
-  size_t offset;
+class Buffer {
+  public:
+    virtual void insert(const std::string& name, Array& item) = 0;
+    virtual void insert(const std::string& name, Array2& item) = 0;
+    virtual void insert(const std::string& name, Array3& item) = 0;
+
+    virtual ~Buffer() {}
 };
 
-struct Buffer {
-  std::vector<uint8_t> storage;
-  std::map<std::string, BufferItem> items;
-
-  void insert(const std::string& name, Array& item);
-  void insert(const std::string& name, Array2& item);
-  void insert(const std::string& name, Array3& item);
-};
+using BufferPtr = std::unique_ptr<Buffer>;
 
 struct ComputationDesc {
   std::vector<std::string> steps;
@@ -43,3 +39,4 @@ class Executor {
 
 using ExecutorPtr = std::unique_ptr<Executor>;
 
+std::vector<std::string> tokenizeCommand(const std::string& command);

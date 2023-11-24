@@ -4,3 +4,4 @@
 
 class Logger;
 ExecutorPtr createGpuExecutor(Logger& logger);
+BufferPtr createGpuBuffer();

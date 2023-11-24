@@ -1,8 +1,8 @@
+#include "math.hpp"
+#include "exception.hpp"
 #include <ostream>
 #include <cstring>
 #include <random>
-#include "math.hpp"
-#include "exception.hpp"
 
 namespace {
 
@@ -135,9 +135,18 @@ Vector::Vector(size_t length)
   , m_data(m_storage.data())
   , m_size(length) {}
 
-Vector::Vector(double* data, size_t size)
-  : m_data(data)
-  , m_size(size) {}
+Vector::Vector(double* data, size_t size, bool copyData) {
+  if (copyData) {
+    m_storage = DataArray(size);
+    m_data = m_storage.data();
+    m_size = size;
+    memcpy(m_data, data, size * sizeof(double));
+  }
+  else {
+    m_data = data;
+    m_size = size;
+  }
+}
 
 Vector::Vector(const DataArray& data)
   : m_storage(data)
@@ -202,6 +211,11 @@ Vector& Vector::operator=(Vector&& rhs) {
   rhs.m_size = 0;
 
   return *this;
+}
+
+void Vector::setDataPtr(double* data) {
+  m_storage = DataArray();
+  m_data = data;
 }
 
 bool Vector::operator==(const Vector& rhs) const {
@@ -293,10 +307,28 @@ Vector Vector::operator-(const Vector& rhs) const {
   return v;
 }
 
+Vector Vector::operator/(const Vector& rhs) const {
+  DBG_ASSERT(rhs.m_size == m_size);
+
+  Vector v(m_size);
+  for (size_t i = 0; i < m_size; ++i) {
+    v[i] = m_data[i] / rhs[i];
+  }
+  return v;
+}
+
 Vector Vector::operator*(double s) const {
   Vector v(m_size);
   for (size_t i = 0; i < m_size; ++i) {
     v[i] = m_data[i] * s;
+  }
+  return v;
+}
+
+Vector Vector::operator/(double s) const {
+  Vector v(m_size);
+  for (size_t i = 0; i < m_size; ++i) {
+    v[i] = m_data[i] / s;
   }
   return v;
 }
@@ -385,70 +417,12 @@ void Vector::transformInPlace(const std::function<double(double)>& f) {
   }
 }
 
-size_t Vector::serializedSize() const {
-  return sizeof(size_t)                   // type
-    + sizeof(size_t)                      // size
-    + m_storage.size() * sizeof(double);  // data
-}
-
-void Vector::serialize(uint8_t* buffer) {
-  size_t type = static_cast<size_t>(MathObjectType::Array);
-
-  uint8_t* cursor = buffer;
-  memcpy(cursor, &type, sizeof(type));
-  cursor += sizeof(type);
-  memcpy(cursor, &m_size, sizeof(m_size));
-  cursor += sizeof(m_size);
-  memcpy(cursor, m_data, m_size * sizeof(double));
-  m_data = reinterpret_cast<double*>(cursor);
-
-  // This is now a shallow vector
-  m_storage = DataArray();
-}
-
-VectorPtr Vector::deserialize(uint8_t* buffer) {
-  size_t type = 0;
-  size_t size = 0;
-
-  uint8_t* cursor = buffer;
-  memcpy(&type, cursor, sizeof(type));
-  cursor += sizeof(type);
-
-  ASSERT_MSG(type == static_cast<size_t>(MathObjectType::Array),
-    "Error deserializing Vector from buffer; incorrect type");
-
-  memcpy(&size, cursor, sizeof(size));
-  cursor += sizeof(size);
-
-  // Return shallow Vector (keep the data in the buffer)
-  return VectorPtr(new Vector(reinterpret_cast<double*>(cursor), size));
-}
-
-ConstVectorPtr Vector::deserialize(const uint8_t* buffer) {
-  size_t type = 0;
-  size_t size = 0;
-
-  const uint8_t* cursor = buffer;
-  memcpy(&type, cursor, sizeof(type));
-  cursor += sizeof(type);
-
-  ASSERT_MSG(type == static_cast<size_t>(MathObjectType::Array),
-    "Error deserializing Vector from buffer; incorrect type");
-
-  memcpy(&size, cursor, sizeof(size));
-  cursor += sizeof(size);
-
-  // Return shallow Vector (keep the data in the buffer)
-  return ConstVectorPtr(new Vector(const_cast<double*>(reinterpret_cast<const double*>(cursor)),
-    size));
-}
-
 VectorPtr Vector::createShallow(DataArray& data) {
-  return VectorPtr(new Vector(data.data(), data.size()));
+  return VectorPtr(new Vector(data.data(), data.size(), false));
 }
 
 ConstVectorPtr Vector::createShallow(const DataArray& data) {
-  return ConstVectorPtr(new Vector(const_cast<double*>(data.data()), data.size()));
+  return ConstVectorPtr(new Vector(const_cast<double*>(data.data()), data.size(), false));
 }
 
 std::ostream& operator<<(std::ostream& os, const Vector& v) {
@@ -484,10 +458,19 @@ Matrix::Matrix(size_t cols, size_t rows)
   , m_rows(rows)
   , m_cols(cols) {}
 
-Matrix::Matrix(double* data, size_t cols, size_t rows)
-  : m_data(data)
-  , m_rows(rows)
-  , m_cols(cols) {}
+Matrix::Matrix(double* data, size_t cols, size_t rows, bool copyData)
+  : m_rows(rows)
+  , m_cols(cols) {
+
+  if (copyData) {
+    m_storage = DataArray(size());
+    m_data = m_storage.data();
+    memcpy(m_data, data, size() * sizeof(double));
+  }
+  else {
+    m_data = data;
+  }
+}
 
 Matrix::Matrix(const DataArray& data, size_t cols, size_t rows)
   : m_storage(data)
@@ -566,6 +549,11 @@ Matrix& Matrix::operator=(Matrix&& rhs) {
   rhs.m_rows = 0;
 
   return *this;
+}
+
+void Matrix::setDataPtr(double* data) {
+  m_storage = DataArray();
+  m_data = data;
 }
 
 Vector Matrix::operator*(const Vector& rhs) const {
@@ -713,81 +701,14 @@ bool Matrix::operator==(const Matrix& rhs) const {
   return arraysEqual(m_data, rhs.m_data, size());
 }
 
-size_t Matrix::serializedSize() const {
-  return sizeof(size_t)                   // type
-    + sizeof(size_t)                      // columns
-    + sizeof(size_t)                      // rows
-    + m_storage.size() * sizeof(double);  // data
-}
-
-void Matrix::serialize(uint8_t* buffer) {
-  size_t type = static_cast<size_t>(MathObjectType::Array2);
-
-  uint8_t* cursor = buffer;
-  memcpy(cursor, &type, sizeof(type));
-  cursor += sizeof(type);
-  memcpy(cursor, &m_cols, sizeof(m_cols));
-  cursor += sizeof(m_cols);
-  memcpy(cursor, &m_rows, sizeof(m_rows));
-  cursor += sizeof(m_rows);
-  memcpy(cursor, m_data, m_rows * m_cols * sizeof(double));
-  m_data = reinterpret_cast<double*>(cursor);
-
-  // This is now a shallow matrix
-  m_storage = DataArray();
-}
-
-MatrixPtr Matrix::deserialize(uint8_t* buffer) {
-  size_t type = 0;
-  size_t cols = 0;
-  size_t rows = 0;
-
-  uint8_t* cursor = buffer;
-  memcpy(&type, cursor, sizeof(type));
-  cursor += sizeof(type);
-
-  ASSERT_MSG(type == static_cast<size_t>(MathObjectType::Array2),
-    "Error deserializing Matrix from buffer; incorrect type");
-
-  memcpy(&cols, cursor, sizeof(cols));
-  cursor += sizeof(cols);
-  memcpy(&rows, cursor, sizeof(rows));
-  cursor += sizeof(rows);
-
-  // Return shallow Matrix (keep the data in the buffer)
-  return MatrixPtr(new Matrix(reinterpret_cast<double*>(cursor), cols, rows));
-}
-
-ConstMatrixPtr Matrix::deserialize(const uint8_t* buffer) {
-  size_t type = 0;
-  size_t cols = 0;
-  size_t rows = 0;
-
-  const uint8_t* cursor = buffer;
-  memcpy(&type, cursor, sizeof(type));
-  cursor += sizeof(type);
-
-  ASSERT_MSG(type == static_cast<size_t>(MathObjectType::Array2),
-    "Error deserializing Matrix from buffer; incorrect type");
-
-  memcpy(&cols, cursor, sizeof(cols));
-  cursor += sizeof(cols);
-  memcpy(&rows, cursor, sizeof(rows));
-  cursor += sizeof(rows);
-
-  // Return shallow Matrix (keep the data in the buffer)
-  return ConstMatrixPtr(new Matrix(const_cast<double*>(reinterpret_cast<const double*>(cursor)),
-    cols, rows));
-}
-
 MatrixPtr Matrix::createShallow(DataArray& data, size_t cols, size_t rows) {
   DBG_ASSERT(data.size() == cols * rows);
-  return MatrixPtr(new Matrix(data.data(), cols, rows));
+  return MatrixPtr(new Matrix(data.data(), cols, rows, false));
 }
 
 ConstMatrixPtr Matrix::createShallow(const DataArray& data, size_t cols, size_t rows) {
   DBG_ASSERT(data.size() == cols * rows);
-  return ConstMatrixPtr(new Matrix(const_cast<double*>(data.data()), cols, rows));
+  return ConstMatrixPtr(new Matrix(const_cast<double*>(data.data()), cols, rows, false));
 }
 
 std::ostream& operator<<(std::ostream& os, const Matrix& m) {
@@ -856,11 +777,21 @@ Kernel::Kernel(DataArray&& data, size_t W, size_t H, size_t D)
   DBG_ASSERT(m_storage.size() == size());    
 }
 
-Kernel::Kernel(double* data, size_t W, size_t H, size_t D)
+Kernel::Kernel(double* data, size_t W, size_t H, size_t D, bool copyData)
   : m_data(data)
   , m_D(D)
   , m_H(H)
-  , m_W(W) {}
+  , m_W(W) {
+
+  if (copyData) {
+    m_storage = DataArray(size());
+    m_data = m_storage.data();
+    memcpy(m_data, data, size() * sizeof(double));
+  }
+  else {
+    m_data = data;
+  }
+}
 
 Kernel::Kernel(const Kernel& cpy)
   : m_storage(cpy.size())
@@ -891,6 +822,11 @@ Kernel::Kernel(Kernel&& mv) {
     mv.m_H = 0;
     mv.m_D = 0;
   }
+}
+
+void Kernel::setDataPtr(double* data) {
+  m_storage = DataArray();
+  m_data = data;
 }
 
 void Kernel::convolve(const Array3& image, Array2& featureMap) const {
@@ -1088,30 +1024,15 @@ void Kernel::transformInPlace(const std::function<double(double)>& f) {
   }
 }
 
-size_t Kernel::serializedSize() const {
-  // TODO
-}
-
-void Kernel::serialize(uint8_t* buffer) {
-  // TODO
-}
-
-KernelPtr Kernel::deserialize(uint8_t* buffer) {
-  // TODO
-}
-
-ConstKernelPtr Kernel::deserialize(const uint8_t* buffer) {
-  // TODO
-}
-
 KernelPtr Kernel::createShallow(DataArray& data, size_t W, size_t H, size_t D) {
   DBG_ASSERT(data.size() == W * H * D);
-  return std::unique_ptr<Kernel>(new Kernel(data.data(), W, H, D));
+  return std::unique_ptr<Kernel>(new Kernel(data.data(), W, H, D, false));
 }
 
 ConstKernelPtr Kernel::createShallow(const DataArray& data, size_t W, size_t H, size_t D) {
   DBG_ASSERT(data.size() == W * H * D);
-  return std::unique_ptr<const Kernel>(new Kernel(const_cast<double*>(data.data()), W, H, D));
+  return std::unique_ptr<const Kernel>(new Kernel(const_cast<double*>(data.data()), W, H, D,
+    false));
 }
 
 std::ostream& operator<<(std::ostream& os, const Kernel& k) {

@@ -4,3 +4,4 @@
 
 class Logger;
 ExecutorPtr createCpuExecutor(Logger& logger);
+BufferPtr createCpuBuffer();

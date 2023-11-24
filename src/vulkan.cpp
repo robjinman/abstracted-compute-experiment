@@ -1,12 +1,12 @@
+#include "gpu.hpp"
+#include "exception.hpp"
+#include <vulkan/vulkan.h>
+#include <shaderc/shaderc.hpp>
 #include <iostream>
 #include <vector>
 #include <cstring>
 #include <algorithm>
 #include <map>
-#include <vulkan/vulkan.h>
-#include <shaderc/shaderc.hpp>
-#include "gpu.hpp"
-#include "exception.hpp"
 
 #define VK_CHECK(fnCall, msg) \
   { \
@@ -28,7 +28,7 @@ class Vulkan : public Gpu {
 
     void submitBuffer(const void* buffer, size_t bufferSize) override;
     void updateBuffer(const void* data) override;
-    void executeShader(size_t shaderIndex, size_t inputSize, size_t workgroupSize) override;
+    void executeShader(size_t shaderIndex, size_t numWorkgroups) override;
     void retrieveBuffer(void* data) override;
 
     ~Vulkan();
@@ -54,7 +54,7 @@ class Vulkan : public Gpu {
     void createDescriptorPool();
     void createDescriptorSets();
     void createCommandBuffer();
-    void recordCommandBuffer(VkCommandBuffer commandBuffer, size_t inputSize, size_t workgroupSize);
+    void recordCommandBuffer(VkCommandBuffer commandBuffer, size_t numWorkgroups);
     void createSyncObjects();
     void destroyDebugMessenger();
     void destroyBuffer();
@@ -164,13 +164,13 @@ void Vulkan::updateBuffer(const void* data) {
   vkFreeMemory(m_device, stagingBufferMemory, nullptr);
 }
 
-void Vulkan::executeShader(size_t shaderIndex, size_t inputSize, size_t workgroupSize) {
+void Vulkan::executeShader(size_t shaderIndex, size_t numWorkgroups) {
   VK_CHECK(vkDeviceWaitIdle(m_device), "Error waiting for device to be idle");
 
   m_currentPipelineIdx = shaderIndex;
 
   vkResetCommandBuffer(m_commandBuffer, 0);
-  recordCommandBuffer(m_commandBuffer, inputSize, workgroupSize);
+  recordCommandBuffer(m_commandBuffer, numWorkgroups);
 
   VkSubmitInfo submitInfo{};
   submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -595,9 +595,7 @@ void Vulkan::createComputePipelines(const std::vector<std::string>& shaderSource
   }
 }
 
-void Vulkan::recordCommandBuffer(VkCommandBuffer commandBuffer, size_t inputSize,
-  size_t workgroupSize) {
-
+void Vulkan::recordCommandBuffer(VkCommandBuffer commandBuffer, size_t numWorkgroups) {
   VkCommandBufferBeginInfo beginInfo{};
   beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
   beginInfo.flags = 0;
@@ -605,8 +603,6 @@ void Vulkan::recordCommandBuffer(VkCommandBuffer commandBuffer, size_t inputSize
 
   VK_CHECK(vkBeginCommandBuffer(commandBuffer, &beginInfo),
     "Failed to begin recording command buffer");
-
-  size_t numWorkgroups = inputSize / workgroupSize;
 
   vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, currentPipeline());
   vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipelineLayout, 0, 1,

@@ -4,8 +4,6 @@
 #include <sstream>
 #include <memory>
 
-#define STR(x) (std::stringstream("") << x).str()
-
 class Logger {
   public:
     virtual void info(const std::string& msg, bool newline = true) = 0;
