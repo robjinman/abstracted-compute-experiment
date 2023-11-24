@@ -66,6 +66,7 @@ class GpuComputation : public Computation {
 using GpuComputationPtr = std::unique_ptr<GpuComputation>;
 
 struct ShaderSnippet {
+  std::string command;
   size_t workgroupSize;
   std::string source;
 };
@@ -209,8 +210,8 @@ ShaderSnippet compileAddCommand(const GpuBuffer& buffer, const std::vector<std::
 
       ASSERT_MSG(aSize == bSize, "Cannot add vectors of sizes " << aSize << " and " << bSize);
 
-      snippet.source = STR("vecVecAdd(" << aOffset << ", " << aSize << ", " << bOffset << ", "
-        << bSize << rOffset << ");");
+      snippet.source = STR("vecVecAdd(" << aOffset << ", " << bOffset << ", " << aSize << ", "
+        << rOffset << ");");
 
       snippet.workgroupSize = aSize;
     }
@@ -233,15 +234,21 @@ ShaderSnippet compileCommand(const Buffer& buf, const std::string& command) {
   ASSERT(tokens.size() >= 2);
   const std::string& functionName = tokens[1];
 
+  ShaderSnippet snippet;
+
   if (functionName == "multiply") {
-    return compileMultiplyCommand(buffer, tokens);
+    snippet = compileMultiplyCommand(buffer, tokens);
   }
   else if (functionName == "add") {
-    return compileAddCommand(buffer, tokens);
+    snippet = compileAddCommand(buffer, tokens);
   }
   else {
     EXCEPTION("Function '" << functionName << "' not recognised");
   }
+
+  snippet.command = command;
+
+  return snippet;
 }
 
 class GpuExecutor : public Executor {
@@ -252,7 +259,8 @@ class GpuExecutor : public Executor {
     void execute(Buffer& buffer, const Computation& computation) const override;
 
   private:
-    GpuComputationStep compileStep(std::vector<std::string>& snippets, size_t workgroupSize) const;
+    GpuComputationStep compileStep(std::vector<ShaderSnippet>& snippets,
+      size_t workgroupSize) const;
 
     Logger& m_logger;
     GpuPtr m_gpu;
@@ -262,36 +270,35 @@ GpuExecutor::GpuExecutor(Logger& logger)
   : m_logger(logger)
   , m_gpu(createGpu()) {}
 
-GpuComputationStep GpuExecutor::compileStep(std::vector<std::string>& snippets,
+GpuComputationStep GpuExecutor::compileStep(std::vector<ShaderSnippet>& snippets,
   size_t workgroupSize) const {
 
-  m_logger.info("Compiling...");
-
   std::ifstream fin("data/functions.glsl");
-  std::stringstream ss;
+  std::stringstream commands;
+  std::stringstream shaderSource;
 
-  ss << "#version 450" << std::endl << std::endl;
-  ss << "layout (local_size_x = " << workgroupSize << ") in;" << std::endl << std::endl;
+  shaderSource << "#version 450" << std::endl << std::endl;
+  shaderSource << "layout (local_size_x = " << workgroupSize << ") in;" << std::endl << std::endl;
 
   std::string line;
   while (std::getline(fin, line)) {
-    ss << line << std::endl;
+    shaderSource << line << std::endl;
   }
 
-  ss << std::endl;
-  ss << "void main() {" << std::endl;
+  shaderSource << std::endl;
+  shaderSource << "void main() {" << std::endl;
 
-  for (const std::string& snippet : snippets) {
-    ss << snippet << std::endl;
+  for (const ShaderSnippet& snippet : snippets) {
+    shaderSource << snippet.source << std::endl;
+    commands << snippet.command << std::endl;
   }
 
-  ss << "}" << std::endl;
+  shaderSource << "}" << std::endl;
 
   GpuComputationStep step;
-  m_logger.info(ss.str()); // TODO
-  step.shader = m_gpu->compileShader(ss.str());
+  step.shader = m_gpu->compileShader(shaderSource.str());
   step.numWorkgroups = 1; // TODO
-  // TODO: Set step.commands
+  step.commands = commands.str();
 
   return step;
 }
@@ -299,28 +306,25 @@ GpuComputationStep GpuExecutor::compileStep(std::vector<std::string>& snippets,
 ComputationPtr GpuExecutor::compile(const Buffer& buffer, const ComputationDesc& desc) const {
   auto computation = std::make_unique<GpuComputation>();
 
-  std::vector<std::string> snippets;
+  std::vector<ShaderSnippet> snippets;
   size_t currentWorkgroupSize = 0;
 
   for (const std::string& command : desc.steps) {
     ShaderSnippet snippet = compileCommand(buffer, command);
 
     if (snippet.workgroupSize == currentWorkgroupSize || snippets.empty()) {
-      m_logger.info("A");
-      snippets.push_back(snippet.source);
+      snippets.push_back(snippet);
       currentWorkgroupSize = snippet.workgroupSize;
     }
     else {
-      m_logger.info("B");
       computation->steps.push_back(compileStep(snippets, currentWorkgroupSize));
       snippets.clear();
-      snippets.push_back(snippet.source);
+      snippets.push_back(snippet);
       currentWorkgroupSize = 0;
     }
   }
 
   if (!snippets.empty()) {
-      m_logger.info("C");
     ASSERT(currentWorkgroupSize != 0);
     computation->steps.push_back(compileStep(snippets, currentWorkgroupSize));
   }
@@ -335,7 +339,7 @@ void GpuExecutor::execute(Buffer& buf, const Computation& computation) const {
   const auto& c = dynamic_cast<const GpuComputation&>(computation);
   for (const auto& step : c.steps) {
 #ifndef NDEBUG
-    m_logger.info(STR("Executing commands: " << step.commands));
+    m_logger.info(STR("Executing commands: \n" << step.commands));
 #endif
     m_gpu->executeShader(step.shader, step.numWorkgroups);
   }

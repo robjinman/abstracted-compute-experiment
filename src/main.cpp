@@ -45,8 +45,8 @@ int main() {
   ComputationPtr c = executor->compile(*buffer, comp1);
   executor->execute(*buffer, *c);
 
+  // [ 642 696 598 706 ]
   logger->info(STR(C));
 
   return 0;
 }
-

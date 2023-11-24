@@ -7,7 +7,7 @@ float readBuffer(uint pos) {
 }
 
 void writeBuffer(uint pos, float val) {
-  data[pos / 4][pos % pos] = val;
+  data[pos / 4][pos % 4] = val;
 }
 
 void matVecMultiply(uint mOffset, uint mCols, uint mRows, uint vOffset, uint vSize, uint rOffset) {
