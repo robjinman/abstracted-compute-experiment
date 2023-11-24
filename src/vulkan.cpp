@@ -24,10 +24,10 @@ const std::vector<const char*> ValidationLayers = {
 
 class Vulkan : public Gpu {
   public:
-    Vulkan(const std::vector<std::string>& shaderSources);
+    Vulkan();
 
+    ShaderHandle compileShader(const std::string& shaderSource);
     void submitBuffer(const void* buffer, size_t bufferSize) override;
-    void updateBuffer(const void* data) override;
     void executeShader(size_t shaderIndex, size_t numWorkgroups) override;
     void retrieveBuffer(void* data) override;
 
@@ -49,7 +49,7 @@ class Vulkan : public Gpu {
     void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
       VkBuffer& buffer, VkDeviceMemory& bufferMemory) const;
     void createDescriptorSetLayout();
-    void createComputePipelines(const std::vector<std::string>& shaderSources);
+    void createPipelineLayout();
     void createCommandPool();
     void createDescriptorPool();
     void createDescriptorSets();
@@ -80,7 +80,7 @@ class Vulkan : public Gpu {
     VkFence m_taskCompleteFence;
 };
 
-Vulkan::Vulkan(const std::vector<std::string>& shaderSources)
+Vulkan::Vulkan()
   : m_buffer(VK_NULL_HANDLE)
   , m_bufferMemory(VK_NULL_HANDLE)
   , m_bufferSize(0) {
@@ -92,7 +92,7 @@ Vulkan::Vulkan(const std::vector<std::string>& shaderSources)
   pickPhysicalDevice();
   createLogicalDevice();
   createDescriptorSetLayout();
-  createComputePipelines(shaderSources);
+  createPipelineLayout();
   createCommandPool();
   createDescriptorPool();
   createCommandBuffer();
@@ -140,28 +140,30 @@ void Vulkan::submitBuffer(const void* data, size_t size) {
   createDescriptorSets();
 }
 
-void Vulkan::updateBuffer(const void* data) {
-  VK_CHECK(vkDeviceWaitIdle(m_device), "Error waiting for device to be idle");
-  
-  if (m_buffer == VK_NULL_HANDLE) {
-    EXCEPTION("Error updating buffer; Buffer has not been created yet");
-  }
+ShaderHandle Vulkan::compileShader(const std::string& shaderSource) {
+  VkShaderModule shaderModule = createShaderModule(shaderSource);
 
-  VkBuffer stagingBuffer;
-  VkDeviceMemory stagingBufferMemory;
-  createBuffer(m_bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-    stagingBuffer, stagingBufferMemory);
+  VkPipelineShaderStageCreateInfo shaderStageInfo{};
+  shaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+  shaderStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+  shaderStageInfo.module = shaderModule;
+  shaderStageInfo.pName = "main";
 
-  void* bufferData = nullptr;
-  vkMapMemory(m_device, stagingBufferMemory, 0, m_bufferSize, 0, &bufferData);
-  memcpy(bufferData, data, m_bufferSize);
-  vkUnmapMemory(m_device, stagingBufferMemory);
+  VkComputePipelineCreateInfo pipelineInfo{};
+  pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+  pipelineInfo.layout = m_pipelineLayout;
+  pipelineInfo.stage = shaderStageInfo;
 
-  copyBuffer(stagingBuffer, m_buffer, m_bufferSize);
+  VkPipeline pipeline = VK_NULL_HANDLE;
 
-  vkDestroyBuffer(m_device, stagingBuffer, nullptr);
-  vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+  VK_CHECK(vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
+    &pipeline), "Failed to create compute pipeline");
+
+  vkDestroyShaderModule(m_device, shaderModule, nullptr);
+
+  m_pipelines.push_back(pipeline);
+
+  return m_pipelines.size() - 1;
 }
 
 void Vulkan::executeShader(size_t shaderIndex, size_t numWorkgroups) {
@@ -481,7 +483,7 @@ VkShaderModule Vulkan::createShaderModule(const std::string& source) const {
     "shader", options);
 
   if (result.GetCompilationStatus() != shaderc_compilation_status_success) {
-    EXCEPTION("Error compiling shader " << source);
+    EXCEPTION("Error compiling shader: " << result.GetErrorMessage());
   }
 
   std::vector<uint32_t> code;
@@ -489,7 +491,7 @@ VkShaderModule Vulkan::createShaderModule(const std::string& source) const {
 
   VkShaderModuleCreateInfo createInfo{};
   createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-  createInfo.codeSize = code.size();
+  createInfo.codeSize = code.size() * sizeof(uint32_t);
   createInfo.pCode = code.data();
 
   VkShaderModule shaderModule;
@@ -560,7 +562,7 @@ void Vulkan::createDescriptorSets() {
   vkUpdateDescriptorSets(m_device, 1, &descriptorWrite, 0, nullptr);
 }
 
-void Vulkan::createComputePipelines(const std::vector<std::string>& shaderSources) { 
+void Vulkan::createPipelineLayout() { 
   VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
   pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
   pipelineLayoutInfo.setLayoutCount = 1;
@@ -569,30 +571,6 @@ void Vulkan::createComputePipelines(const std::vector<std::string>& shaderSource
   pipelineLayoutInfo.pPushConstantRanges = nullptr;
   VK_CHECK(vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &m_pipelineLayout),
     "Failed to create pipeline layout");
-
-  for (const std::string& shaderSource : shaderSources) {
-    VkShaderModule shaderModule = createShaderModule(shaderSource);
-
-    VkPipelineShaderStageCreateInfo shaderStageInfo{};
-    shaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    shaderStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-    shaderStageInfo.module = shaderModule;
-    shaderStageInfo.pName = "main";
-
-    VkComputePipelineCreateInfo pipelineInfo{};
-    pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    pipelineInfo.layout = m_pipelineLayout;
-    pipelineInfo.stage = shaderStageInfo;
-
-    VkPipeline pipeline = VK_NULL_HANDLE;
-
-    VK_CHECK(vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
-      &pipeline), "Failed to create compute pipeline");
-
-    vkDestroyShaderModule(m_device, shaderModule, nullptr);
-
-    m_pipelines.push_back(pipeline);
-  }
 }
 
 void Vulkan::recordCommandBuffer(VkCommandBuffer commandBuffer, size_t numWorkgroups) {
@@ -646,6 +624,6 @@ Vulkan::~Vulkan() {
 
 }
 
-GpuPtr createGpu(const std::vector<std::string>& shaderSources) {
-  return std::make_unique<Vulkan>(shaderSources);
+GpuPtr createGpu() {
+  return std::make_unique<Vulkan>();
 }

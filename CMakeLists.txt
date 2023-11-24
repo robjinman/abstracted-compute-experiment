@@ -96,3 +96,8 @@ set(RELEASE_FLAGS ${COMPILER_FLAGS} -O3 -DNDEBUG)
 target_compile_options(${TARGET_NAME} PUBLIC "$<$<CONFIG:DEBUG>:${DEBUG_FLAGS}>")
 target_compile_options(${TARGET_NAME} PUBLIC "$<$<CONFIG:RELEASE>:${RELEASE_FLAGS}>")
 
+add_custom_command(
+  TARGET ${TARGET_NAME} POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_SOURCE_DIR}/data
+    ${CMAKE_CURRENT_BINARY_DIR}/data)
