@@ -18,7 +18,7 @@ struct GpuBufferItem {
 
 class GpuBuffer : public Buffer {
   public:
-    std::vector<double> storage;
+    std::vector<netfloat_t> storage;
     std::map<std::string, GpuBufferItem> items;
 
     void insert(const std::string& name, Array& item) override;
@@ -35,7 +35,7 @@ void GpuBuffer::insertItem(const std::string& name, T& item) {
   size_t size = item.storage().size();
   size_t offset = storage.size();
   storage.resize(offset + size);
-  memcpy(storage.data() + offset, item.storage().data(), size * sizeof(double));
+  memcpy(storage.data() + offset, item.storage().data(), size * sizeof(netfloat_t));
   item.setDataPtr(storage.data() + offset);
   items.insert({ name, GpuBufferItem{ item.type(), item.shape(), offset } });
 }
@@ -72,44 +72,44 @@ struct ShaderSnippet {
 
 class Token {
   public:
-    Token(double value);
+    Token(netfloat_t value);
     Token(const GpuBufferItem& bufferItem);
 
     bool isNumeric() const;
-    double floatValue() const;
+    netfloat_t floatValue() const;
     const GpuBufferItem& bufferItem() const;
 
   private:
-    std::variant<double, GpuBufferItem> m_value;
+    std::variant<netfloat_t, GpuBufferItem> m_value;
 };
 
-Token::Token(double value)
+Token::Token(netfloat_t value)
   : m_value(value) {}
 
 Token::Token(const GpuBufferItem& bufferItem)
   : m_value(bufferItem) {}
 
 bool Token::isNumeric() const {
-  return std::holds_alternative<double>(m_value);
+  return std::holds_alternative<netfloat_t>(m_value);
 }
 
-double Token::floatValue() const {
-  return std::get<double>(m_value);
+netfloat_t Token::floatValue() const {
+  return std::get<netfloat_t>(m_value);
 }
 
 const GpuBufferItem& Token::bufferItem() const {
   return std::get<GpuBufferItem>(m_value);
 }
 
-bool parseDouble(const std::string& strValue, double& value) {
+bool parsenetfloat_t(const std::string& strValue, netfloat_t& value) {
   std::stringstream ss(strValue);
   ss >> value;
   return !ss.fail() && ss.eof();
 }
 
 Token parseToken(const GpuBuffer& buffer, const std::string& strToken) {
-  double value = 0;
-  if (parseDouble(strToken, value)) {
+  netfloat_t value = 0;
+  if (parsenetfloat_t(strToken, value)) {
     return value;
   }
   else {
@@ -139,7 +139,7 @@ ShaderSnippet compileMultiplyCommand(const GpuBuffer& buffer,
       size_t rOffset = returnVal.offset;
       size_t vOffset = arg1.bufferItem().offset;
       size_t vSize = arg1.bufferItem().shape[0];
-      double x = arg2.floatValue();
+      netfloat_t x = arg2.floatValue();
 
       snippet.source = STR("vecScalarMultiply(" << vOffset << ", " << vSize << ", " << x << ", "
         << rOffset << ");");
@@ -330,7 +330,7 @@ ComputationPtr GpuExecutor::compile(const Buffer& buffer, const ComputationDesc&
 
 void GpuExecutor::execute(Buffer& buf, const Computation& computation) const {
   auto& buffer = dynamic_cast<GpuBuffer&>(buf);
-  m_gpu->submitBuffer(buffer.storage.data(), buffer.storage.size() * sizeof(double));
+  m_gpu->submitBuffer(buffer.storage.data(), buffer.storage.size() * sizeof(netfloat_t));
 
   const auto& c = dynamic_cast<const GpuComputation&>(computation);
   for (const auto& step : c.steps) {

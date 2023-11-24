@@ -70,44 +70,44 @@ class CpuExecutor : public Executor {
 
 class Token {
   public:
-    Token(double value);
+    Token(netfloat_t value);
     Token(const CpuBuffer::Entry& bufferEntry);
 
     bool isNumeric() const;
-    double floatValue() const;
+    netfloat_t floatValue() const;
     const CpuBuffer::Entry& bufferEntry() const;
 
   private:
-    std::variant<double, CpuBuffer::Entry> m_value;
+    std::variant<netfloat_t, CpuBuffer::Entry> m_value;
 };
 
-Token::Token(double value)
+Token::Token(netfloat_t value)
   : m_value(value) {}
 
 Token::Token(const CpuBuffer::Entry& bufferEntry)
   : m_value(bufferEntry) {}
 
 bool Token::isNumeric() const {
-  return std::holds_alternative<double>(m_value);
+  return std::holds_alternative<netfloat_t>(m_value);
 }
 
-double Token::floatValue() const {
-  return std::get<double>(m_value);
+netfloat_t Token::floatValue() const {
+  return std::get<netfloat_t>(m_value);
 }
 
 const CpuBuffer::Entry& Token::bufferEntry() const {
   return std::get<CpuBuffer::Entry>(m_value);
 }
 
-bool parseDouble(const std::string& strValue, double& value) {
+bool parsenetfloat_t(const std::string& strValue, netfloat_t& value) {
   std::stringstream ss(strValue);
   ss >> value;
   return !ss.fail() && ss.eof();
 }
 
 Token parseToken(const CpuBuffer& buffer, const std::string& strToken) {
-  double value = 0;
-  if (parseDouble(strToken, value)) {
+  netfloat_t value = 0;
+  if (parsenetfloat_t(strToken, value)) {
     return value;
   }
   else {
@@ -137,7 +137,7 @@ CpuComputationStep compileMultiplyCommand(const CpuBuffer& buffer,
     if (arg2.isNumeric()) {
       Vector& R = *(std::get<VectorPtr>(buffer.items[returnVal.index]));
       Vector& V = *(std::get<VectorPtr>(buffer.items[arg1.bufferEntry().index]));
-      double x = arg2.floatValue();
+      netfloat_t x = arg2.floatValue();
 
       step.function = [&R, &V, x]() {
         R = V * x;

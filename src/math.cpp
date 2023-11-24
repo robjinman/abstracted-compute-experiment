@@ -6,7 +6,7 @@
 
 namespace {
 
-bool arraysEqual(const double* A, const double* B, size_t size) {
+bool arraysEqual(const netfloat_t* A, const netfloat_t* B, size_t size) {
   for (size_t i = 0; i < size; ++i) {
     if (A[i] != B[i]) {
       return false;
@@ -16,7 +16,7 @@ bool arraysEqual(const double* A, const double* B, size_t size) {
   return true;
 }
 
-size_t count(std::initializer_list<std::initializer_list<double>> X) {
+size_t count(std::initializer_list<std::initializer_list<netfloat_t>> X) {
   [[maybe_unused]] size_t H = X.size();
   DBG_ASSERT(H > 0);
   [[maybe_unused]] size_t W = X.begin()->size();
@@ -32,7 +32,7 @@ size_t count(std::initializer_list<std::initializer_list<double>> X) {
   return numElements;
 }
 
-size_t count(std::initializer_list<std::initializer_list<std::initializer_list<double>>> X) {
+size_t count(std::initializer_list<std::initializer_list<std::initializer_list<netfloat_t>>> X) {
   [[maybe_unused]] size_t H = X.size();
   DBG_ASSERT(H > 0);
   [[maybe_unused]] size_t W = X.begin()->size();
@@ -61,17 +61,17 @@ DataArray::DataArray()
   , m_size(0) {}
 
 DataArray::DataArray(size_t size)
-  : m_data(new double[size])
+  : m_data(new netfloat_t[size])
   , m_size(size) {
 
-  memset(m_data.get(), 0, m_size * sizeof(double));
+  memset(m_data.get(), 0, m_size * sizeof(netfloat_t));
 }
 
 DataArray::DataArray(const DataArray& cpy)
-  : m_data(new double[cpy.m_size])
+  : m_data(new netfloat_t[cpy.m_size])
   , m_size(cpy.m_size) {
 
-  memcpy(m_data.get(), cpy.m_data.get(), m_size * sizeof(double));
+  memcpy(m_data.get(), cpy.m_data.get(), m_size * sizeof(netfloat_t));
 }
 
 DataArray::DataArray(DataArray&& mv)
@@ -83,8 +83,8 @@ DataArray::DataArray(DataArray&& mv)
 
 DataArray& DataArray::operator=(const DataArray& rhs) {
   m_size = rhs.m_size;
-  m_data.reset(new double[m_size]);
-  memcpy(m_data.get(), rhs.m_data.get(), m_size * sizeof(double));
+  m_data.reset(new netfloat_t[m_size]);
+  memcpy(m_data.get(), rhs.m_data.get(), m_size * sizeof(netfloat_t));
 
   return *this;
 }
@@ -101,10 +101,10 @@ DataArray& DataArray::operator=(DataArray&& rhs) {
 DataArray DataArray::concat(const DataArray& A, const DataArray& B) {
   DataArray C(A.size() + B.size());
 
-  double* ptr = C.m_data.get();
-  memcpy(ptr, A.m_data.get(), A.size() * sizeof(double));
+  netfloat_t* ptr = C.m_data.get();
+  memcpy(ptr, A.m_data.get(), A.size() * sizeof(netfloat_t));
   ptr += A.size();
-  memcpy(ptr, B.m_data.get(), B.size() * sizeof(double));
+  memcpy(ptr, B.m_data.get(), B.size() * sizeof(netfloat_t));
 
   return C;
 }
@@ -119,13 +119,13 @@ std::ostream& operator<<(std::ostream& os, const DataArray& v) {
   return os;
 }
 
-Vector::Vector(std::initializer_list<double> data)
+Vector::Vector(std::initializer_list<netfloat_t> data)
   : m_storage(data.size())
   , m_data(m_storage.data())
   , m_size(data.size()) {
 
   size_t i = 0;
-  for (double x : data) {
+  for (netfloat_t x : data) {
     m_data[i++] = x;
   }
 }
@@ -135,12 +135,12 @@ Vector::Vector(size_t length)
   , m_data(m_storage.data())
   , m_size(length) {}
 
-Vector::Vector(double* data, size_t size, bool copyData) {
+Vector::Vector(netfloat_t* data, size_t size, bool copyData) {
   if (copyData) {
     m_storage = DataArray(size);
     m_data = m_storage.data();
     m_size = size;
-    memcpy(m_data, data, size * sizeof(double));
+    memcpy(m_data, data, size * sizeof(netfloat_t));
   }
   else {
     m_data = data;
@@ -163,7 +163,7 @@ Vector::Vector(const Vector& cpy)
   , m_data(m_storage.data())
   , m_size(cpy.m_size) {
 
-  memcpy(m_data, cpy.m_data, m_size * sizeof(double));
+  memcpy(m_data, cpy.m_data, m_size * sizeof(netfloat_t));
 }
 
 Vector::Vector(Vector&& mv) {
@@ -172,7 +172,7 @@ Vector::Vector(Vector&& mv) {
   if (mv.isShallow()) {
     m_storage = DataArray(m_size);
     m_data = m_storage.data();
-    memcpy(m_data, mv.m_data, m_size * sizeof(double));
+    memcpy(m_data, mv.m_data, m_size * sizeof(netfloat_t));
   }
   else {
     m_storage = std::move(mv.m_storage);
@@ -193,7 +193,7 @@ Vector& Vector::operator=(const Vector& rhs) {
     m_data = m_storage.data();
   }
 
-  memcpy(m_data, rhs.m_data, m_size * sizeof(double));
+  memcpy(m_data, rhs.m_data, m_size * sizeof(netfloat_t));
 
   return *this;
 }
@@ -213,7 +213,7 @@ Vector& Vector::operator=(Vector&& rhs) {
   return *this;
 }
 
-void Vector::setDataPtr(double* data) {
+void Vector::setDataPtr(netfloat_t* data) {
   m_storage = DataArray();
   m_data = data;
 }
@@ -226,32 +226,32 @@ bool Vector::operator==(const Vector& rhs) const {
   return arraysEqual(m_data, rhs.m_data, m_size);
 }
 
-double Vector::magnitude() const {
+netfloat_t Vector::magnitude() const {
   return sqrt(squareMagnitude());
 }
 
-double Vector::squareMagnitude() const {
-  double sqSum = 0.0;
+netfloat_t Vector::squareMagnitude() const {
+  netfloat_t sqSum = 0.0;
   for (size_t i = 0; i < m_size; ++i) {
-    double x = m_data[i];
+    netfloat_t x = m_data[i];
     sqSum += x * x;
   }
   return sqSum;
 }
 
 void Vector::zero() {
-  memset(m_data, 0, m_size * sizeof(double));
+  memset(m_data, 0, m_size * sizeof(netfloat_t));
 }
 
-void Vector::fill(double x) {
+void Vector::fill(netfloat_t x) {
   for (size_t i = 0; i < m_size; ++i) {
     m_data[i] = x;
   }
 }
 
-Vector& Vector::randomize(double standardDeviation) {
+Vector& Vector::randomize(netfloat_t standardDeviation) {
   static std::mt19937 gen(0);
-  std::normal_distribution<double> dist(0.0, standardDeviation);
+  std::normal_distribution<netfloat_t> dist(0.0, standardDeviation);
 
   for (size_t i = 0; i < m_size; ++i) {
     m_data[i] = dist(gen);
@@ -261,16 +261,16 @@ Vector& Vector::randomize(double standardDeviation) {
 }
 
 void Vector::normalize() {
-  double mag = magnitude();
+  netfloat_t mag = magnitude();
   for (size_t i = 0; i < m_size; ++i) {
     m_data[i] = m_data[i] / mag;
   }
 }
 
-double Vector::dot(const Vector& rhs) const {
+netfloat_t Vector::dot(const Vector& rhs) const {
   DBG_ASSERT(rhs.m_size == m_size);
 
-  double x = 0.0;
+  netfloat_t x = 0.0;
   for (size_t i = 0; i < m_size; ++i) {
     x += m_data[i] * rhs[i];
   }
@@ -317,7 +317,7 @@ Vector Vector::operator/(const Vector& rhs) const {
   return v;
 }
 
-Vector Vector::operator*(double s) const {
+Vector Vector::operator*(netfloat_t s) const {
   Vector v(m_size);
   for (size_t i = 0; i < m_size; ++i) {
     v[i] = m_data[i] * s;
@@ -325,7 +325,7 @@ Vector Vector::operator*(double s) const {
   return v;
 }
 
-Vector Vector::operator/(double s) const {
+Vector Vector::operator/(netfloat_t s) const {
   Vector v(m_size);
   for (size_t i = 0; i < m_size; ++i) {
     v[i] = m_data[i] / s;
@@ -333,7 +333,7 @@ Vector Vector::operator/(double s) const {
   return v;
 }
 
-Vector Vector::operator+(double s) const {
+Vector Vector::operator+(netfloat_t s) const {
   Vector v(m_size);
   for (size_t i = 0; i < m_size; ++i) {
     v[i] = m_data[i] + s;
@@ -341,7 +341,7 @@ Vector Vector::operator+(double s) const {
   return v;
 }
 
-Vector Vector::operator-(double s) const {
+Vector Vector::operator-(netfloat_t s) const {
   Vector v(m_size);
   for (size_t i = 0; i < m_size; ++i) {
     v[i] = m_data[i] - s;
@@ -363,36 +363,36 @@ Vector& Vector::operator-=(const Vector& rhs) {
   return *this;
 }
 
-Vector& Vector::operator+=(double x) {
+Vector& Vector::operator+=(netfloat_t x) {
   for (size_t i = 0; i < m_size; ++i) {
     m_data[i] += x;
   }
   return *this;
 }
 
-Vector& Vector::operator-=(double x) {
+Vector& Vector::operator-=(netfloat_t x) {
   for (size_t i = 0; i < m_size; ++i) {
     m_data[i] -= x;
   }
   return *this;
 }
 
-Vector& Vector::operator*=(double x) {
+Vector& Vector::operator*=(netfloat_t x) {
   for (size_t i = 0; i < m_size; ++i) {
     m_data[i] *= x;
   }
   return *this;
 }
 
-Vector& Vector::operator/=(double x) {
+Vector& Vector::operator/=(netfloat_t x) {
   for (size_t i = 0; i < m_size; ++i) {
     m_data[i] /= x;
   }
   return *this;
 }
 
-double Vector::sum() const {
-  double s = 0.0;
+netfloat_t Vector::sum() const {
+  netfloat_t s = 0.0;
 
   for (size_t i = 0; i < m_size; ++i) {
     s += m_data[i];
@@ -401,7 +401,7 @@ double Vector::sum() const {
   return s;
 }
 
-Vector Vector::computeTransform(const std::function<double(double)>& f) const {
+Vector Vector::computeTransform(const std::function<netfloat_t(netfloat_t)>& f) const {
   Vector v(m_size);
 
   for (size_t i = 0; i < m_size; ++i) {
@@ -411,7 +411,7 @@ Vector Vector::computeTransform(const std::function<double(double)>& f) const {
   return v;
 }
 
-void Vector::transformInPlace(const std::function<double(double)>& f) {
+void Vector::transformInPlace(const std::function<netfloat_t(netfloat_t)>& f) {
   for (size_t i = 0; i < m_size; ++i) {
     m_data[i] = f(m_data[i]);
   }
@@ -422,7 +422,7 @@ VectorPtr Vector::createShallow(DataArray& data) {
 }
 
 ConstVectorPtr Vector::createShallow(const DataArray& data) {
-  return ConstVectorPtr(new Vector(const_cast<double*>(data.data()), data.size(), false));
+  return ConstVectorPtr(new Vector(const_cast<netfloat_t*>(data.data()), data.size(), false));
 }
 
 std::ostream& operator<<(std::ostream& os, const Vector& v) {
@@ -435,7 +435,7 @@ std::ostream& operator<<(std::ostream& os, const Vector& v) {
   return os;
 }
 
-Matrix::Matrix(std::initializer_list<std::initializer_list<double>> data)
+Matrix::Matrix(std::initializer_list<std::initializer_list<netfloat_t>> data)
   : m_storage(count(data))
   , m_data(m_storage.data())
   , m_rows(data.size())
@@ -444,7 +444,7 @@ Matrix::Matrix(std::initializer_list<std::initializer_list<double>> data)
   size_t r = 0;
   for (auto row : data) {
     size_t c = 0;
-    for (double value : row) {
+    for (netfloat_t value : row) {
       set(c, r, value);
       ++c;
     }
@@ -458,14 +458,14 @@ Matrix::Matrix(size_t cols, size_t rows)
   , m_rows(rows)
   , m_cols(cols) {}
 
-Matrix::Matrix(double* data, size_t cols, size_t rows, bool copyData)
+Matrix::Matrix(netfloat_t* data, size_t cols, size_t rows, bool copyData)
   : m_rows(rows)
   , m_cols(cols) {
 
   if (copyData) {
     m_storage = DataArray(size());
     m_data = m_storage.data();
-    memcpy(m_data, data, size() * sizeof(double));
+    memcpy(m_data, data, size() * sizeof(netfloat_t));
   }
   else {
     m_data = data;
@@ -496,7 +496,7 @@ Matrix::Matrix(const Matrix& cpy)
   , m_rows(cpy.m_rows)
   , m_cols(cpy.m_cols) {
 
-  memcpy(m_data, cpy.m_data, m_cols * m_rows * sizeof(double));
+  memcpy(m_data, cpy.m_data, m_cols * m_rows * sizeof(netfloat_t));
 }
 
 Matrix::Matrix(Matrix&& mv) {
@@ -506,7 +506,7 @@ Matrix::Matrix(Matrix&& mv) {
   if (mv.isShallow()) {
     m_storage = DataArray(m_cols * m_rows);
     m_data = m_storage.data();
-    memcpy(m_data, mv.m_data, m_cols * m_rows * sizeof(double));
+    memcpy(m_data, mv.m_data, m_cols * m_rows * sizeof(netfloat_t));
   }
   else {
     m_storage = std::move(mv.m_storage);
@@ -529,7 +529,7 @@ Matrix& Matrix::operator=(const Matrix& rhs) {
     m_data = m_storage.data();
   }
 
-  memcpy(m_data, rhs.m_data, m_cols * m_rows * sizeof(double));
+  memcpy(m_data, rhs.m_data, m_cols * m_rows * sizeof(netfloat_t));
 
   return *this;
 }
@@ -551,7 +551,7 @@ Matrix& Matrix::operator=(Matrix&& rhs) {
   return *this;
 }
 
-void Matrix::setDataPtr(double* data) {
+void Matrix::setDataPtr(netfloat_t* data) {
   m_storage = DataArray();
   m_data = data;
 }
@@ -561,7 +561,7 @@ Vector Matrix::operator*(const Vector& rhs) const {
 
   Vector v(m_rows);
   for (size_t r = 0; r < m_rows; ++r) {
-    double sum = 0.0;
+    netfloat_t sum = 0.0;
     for (size_t c = 0; c < m_cols; ++c) {
       sum += at(c, r) * rhs[c];
     }
@@ -596,28 +596,28 @@ Matrix Matrix::operator-(const Matrix& rhs) const {
   return m;
 }
 
-Matrix& Matrix::operator+=(double x) {
+Matrix& Matrix::operator+=(netfloat_t x) {
   for (size_t i = 0; i < size(); ++i) {
     m_data[i] += x;
   }
   return *this;
 }
 
-Matrix& Matrix::operator-=(double x) {
+Matrix& Matrix::operator-=(netfloat_t x) {
   for (size_t i = 0; i < size(); ++i) {
     m_data[i] -= x;
   }
   return *this;
 }
 
-Matrix& Matrix::operator*=(double x) {
+Matrix& Matrix::operator*=(netfloat_t x) {
   for (size_t i = 0; i < size(); ++i) {
     m_data[i] *= x;
   }
   return *this;
 }
 
-Matrix& Matrix::operator/=(double x) {
+Matrix& Matrix::operator/=(netfloat_t x) {
   for (size_t i = 0; i < size(); ++i) {
     m_data[i] /= x;
   }
@@ -643,7 +643,7 @@ Vector Matrix::transposeMultiply(const Vector& rhs) const {
 
   Vector v(m_cols);
   for (size_t c = 0; c < m_cols; ++c) {
-    double sum = 0.0;
+    netfloat_t sum = 0.0;
     for (size_t r = 0; r < m_rows; ++r) {
       sum += at(c, r) * rhs[r];
     }
@@ -653,18 +653,18 @@ Vector Matrix::transposeMultiply(const Vector& rhs) const {
 }
 
 void Matrix::zero() {
-  memset(m_data, 0, size() * sizeof(double));
+  memset(m_data, 0, size() * sizeof(netfloat_t));
 }
 
-void Matrix::fill(double x) {
+void Matrix::fill(netfloat_t x) {
   for (size_t i = 0; i < size(); ++i) {
     m_data[i] = x;
   }
 }
 
-Matrix& Matrix::randomize(double standardDeviation) {
+Matrix& Matrix::randomize(netfloat_t standardDeviation) {
   static std::mt19937 gen(0);
-  std::normal_distribution<double> dist(0.0, standardDeviation);
+  std::normal_distribution<netfloat_t> dist(0.0, standardDeviation);
 
   for (size_t i = 0; i < size(); ++i) {
     m_data[i] = dist(gen);
@@ -673,8 +673,8 @@ Matrix& Matrix::randomize(double standardDeviation) {
   return *this;
 }
 
-double Matrix::sum() const {
-  double s = 0.0;
+netfloat_t Matrix::sum() const {
+  netfloat_t s = 0.0;
 
   for (size_t i = 0; i < size(); ++i) {
     s += m_data[i];
@@ -708,7 +708,7 @@ MatrixPtr Matrix::createShallow(DataArray& data, size_t cols, size_t rows) {
 
 ConstMatrixPtr Matrix::createShallow(const DataArray& data, size_t cols, size_t rows) {
   DBG_ASSERT(data.size() == cols * rows);
-  return ConstMatrixPtr(new Matrix(const_cast<double*>(data.data()), cols, rows, false));
+  return ConstMatrixPtr(new Matrix(const_cast<netfloat_t*>(data.data()), cols, rows, false));
 }
 
 std::ostream& operator<<(std::ostream& os, const Matrix& m) {
@@ -728,7 +728,7 @@ std::ostream& operator<<(std::ostream& os, const Matrix& m) {
   return os;
 }
 
-Kernel::Kernel(std::initializer_list<std::initializer_list<std::initializer_list<double>>> data)
+Kernel::Kernel(std::initializer_list<std::initializer_list<std::initializer_list<netfloat_t>>> data)
   : m_storage(count(data))
   , m_data(m_storage.data())
   , m_D(data.size())
@@ -740,7 +740,7 @@ Kernel::Kernel(std::initializer_list<std::initializer_list<std::initializer_list
     size_t y = 0;
     for (auto row : plane) {
       size_t x = 0;
-      for (double value : row) {
+      for (netfloat_t value : row) {
         set(x, y, z, value);
         ++x;
       }
@@ -777,7 +777,7 @@ Kernel::Kernel(DataArray&& data, size_t W, size_t H, size_t D)
   DBG_ASSERT(m_storage.size() == size());    
 }
 
-Kernel::Kernel(double* data, size_t W, size_t H, size_t D, bool copyData)
+Kernel::Kernel(netfloat_t* data, size_t W, size_t H, size_t D, bool copyData)
   : m_data(data)
   , m_D(D)
   , m_H(H)
@@ -786,7 +786,7 @@ Kernel::Kernel(double* data, size_t W, size_t H, size_t D, bool copyData)
   if (copyData) {
     m_storage = DataArray(size());
     m_data = m_storage.data();
-    memcpy(m_data, data, size() * sizeof(double));
+    memcpy(m_data, data, size() * sizeof(netfloat_t));
   }
   else {
     m_data = data;
@@ -800,7 +800,7 @@ Kernel::Kernel(const Kernel& cpy)
   , m_H(cpy.m_H)
   , m_W(cpy.m_W) {
 
-  memcpy(m_data, cpy.m_data, m_W * m_H * m_D * sizeof(double));
+  memcpy(m_data, cpy.m_data, m_W * m_H * m_D * sizeof(netfloat_t));
 }
 
 Kernel::Kernel(Kernel&& mv) {
@@ -811,7 +811,7 @@ Kernel::Kernel(Kernel&& mv) {
   if (mv.isShallow()) {
     m_storage = DataArray(m_W * m_H * m_D);
     m_data = m_storage.data();
-    memcpy(m_data, mv.m_data, m_W * m_H * m_D * sizeof(double));
+    memcpy(m_data, mv.m_data, m_W * m_H * m_D * sizeof(netfloat_t));
   }
   else {
     m_storage = std::move(mv.m_storage);
@@ -824,7 +824,7 @@ Kernel::Kernel(Kernel&& mv) {
   }
 }
 
-void Kernel::setDataPtr(double* data) {
+void Kernel::setDataPtr(netfloat_t* data) {
   m_storage = DataArray();
   m_data = data;
 }
@@ -842,7 +842,7 @@ void Kernel::convolve(const Array3& image, Array2& featureMap) const {
 
   for (size_t fmY = 0; fmY < fmH; ++fmY) {
     for (size_t fmX = 0; fmX < fmW; ++fmX) {
-      double sum = 0.0;
+      netfloat_t sum = 0.0;
       for (size_t k = 0; k < m_D; ++k) {
         for (size_t j = 0; j < m_H; ++j) {
           for (size_t i = 0; i < m_W; ++i) {
@@ -875,7 +875,7 @@ Kernel& Kernel::operator=(const Kernel& rhs) {
     m_data = m_storage.data();
   }
 
-  memcpy(m_data, rhs.m_data, m_W * m_H * m_D * sizeof(double));
+  memcpy(m_data, rhs.m_data, m_W * m_H * m_D * sizeof(netfloat_t));
 
   return *this;
 }
@@ -900,18 +900,18 @@ Kernel& Kernel::operator=(Kernel&& rhs) {
 }
 
 void Kernel::zero() {
-  memset(m_data, 0, size() * sizeof(double));
+  memset(m_data, 0, size() * sizeof(netfloat_t));
 }
 
-void Kernel::fill(double x) {
+void Kernel::fill(netfloat_t x) {
   for (size_t i = 0; i < size(); ++i) {
     m_data[i] = x;
   }
 }
 
-Kernel& Kernel::randomize(double standardDeviation) {
+Kernel& Kernel::randomize(netfloat_t standardDeviation) {
   static std::mt19937 gen(0);
-  std::normal_distribution<double> dist(0.0, standardDeviation);
+  std::normal_distribution<netfloat_t> dist(0.0, standardDeviation);
 
   for (size_t i = 0; i < size(); ++i) {
     m_data[i] = dist(gen);
@@ -936,7 +936,7 @@ Kernel Kernel::operator-(const Kernel& rhs) const {
   return K;
 }
 
-Kernel Kernel::operator+(double x) const {
+Kernel Kernel::operator+(netfloat_t x) const {
   Kernel K(m_W, m_H, m_D);
   for (size_t i = 0; i < size(); ++i) {
     K.m_data[i] = m_data[i] + x;
@@ -944,7 +944,7 @@ Kernel Kernel::operator+(double x) const {
   return K;
 }
 
-Kernel Kernel::operator-(double x) const {
+Kernel Kernel::operator-(netfloat_t x) const {
   Kernel K(m_W, m_H, m_D);
   for (size_t i = 0; i < size(); ++i) {
     K.m_data[i] = m_data[i] - x;
@@ -952,7 +952,7 @@ Kernel Kernel::operator-(double x) const {
   return K;
 }
 
-Kernel Kernel::operator*(double x) const {
+Kernel Kernel::operator*(netfloat_t x) const {
   Kernel K(m_W, m_H, m_D);
   for (size_t i = 0; i < size(); ++i) {
     K.m_data[i] = m_data[i] * x;
@@ -960,7 +960,7 @@ Kernel Kernel::operator*(double x) const {
   return K;
 }
 
-Kernel Kernel::operator/(double x) const {
+Kernel Kernel::operator/(netfloat_t x) const {
   Kernel K(m_W, m_H, m_D);
   for (size_t i = 0; i < size(); ++i) {
     K.m_data[i] = m_data[i] / x;
@@ -968,28 +968,28 @@ Kernel Kernel::operator/(double x) const {
   return K;
 }
 
-Kernel& Kernel::operator+=(double x) {
+Kernel& Kernel::operator+=(netfloat_t x) {
   for (size_t i = 0; i < size(); ++i) {
     m_data[i] += x;
   }
   return *this;
 }
 
-Kernel& Kernel::operator-=(double x) {
+Kernel& Kernel::operator-=(netfloat_t x) {
   for (size_t i = 0; i < size(); ++i) {
     m_data[i] -= x;
   }
   return *this;
 }
 
-Kernel& Kernel::operator*=(double x) {
+Kernel& Kernel::operator*=(netfloat_t x) {
   for (size_t i = 0; i < size(); ++i) {
     m_data[i] *= x;
   }
   return *this;
 }
 
-Kernel& Kernel::operator/=(double x) {
+Kernel& Kernel::operator/=(netfloat_t x) {
   for (size_t i = 0; i < size(); ++i) {
     m_data[i] /= x;
   }
@@ -1010,7 +1010,7 @@ Kernel& Kernel::operator-=(const Kernel& rhs) {
   return *this;
 }
 
-Kernel Kernel::computeTransform(const std::function<double(double)>& f) const {
+Kernel Kernel::computeTransform(const std::function<netfloat_t(netfloat_t)>& f) const {
   Kernel K(m_W, m_H, m_D);
   for (size_t i = 0; i < size(); ++i) {
     K.m_data[i] = f(m_data[i]);
@@ -1018,7 +1018,7 @@ Kernel Kernel::computeTransform(const std::function<double(double)>& f) const {
   return K;
 }
 
-void Kernel::transformInPlace(const std::function<double(double)>& f) {
+void Kernel::transformInPlace(const std::function<netfloat_t(netfloat_t)>& f) {
   for (size_t i = 0; i < size(); ++i) {
     m_data[i] = f(m_data[i]);
   }
@@ -1031,7 +1031,7 @@ KernelPtr Kernel::createShallow(DataArray& data, size_t W, size_t H, size_t D) {
 
 ConstKernelPtr Kernel::createShallow(const DataArray& data, size_t W, size_t H, size_t D) {
   DBG_ASSERT(data.size() == W * H * D);
-  return std::unique_ptr<const Kernel>(new Kernel(const_cast<double*>(data.data()), W, H, D,
+  return std::unique_ptr<const Kernel>(new Kernel(const_cast<netfloat_t*>(data.data()), W, H, D,
     false));
 }
 
