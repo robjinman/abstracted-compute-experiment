@@ -2,11 +2,18 @@
 #include "gpu_compute.hpp"
 #include "logger.hpp"
 #include "utils.hpp"
+#include "timer.hpp"
 #include <chrono>
 
 using std::chrono::duration_cast;
 
-long long runBenchmark(Logger& logger, bool gpu) {
+struct InputData {
+  Matrix M;
+  Vector V;
+  Vector B;
+};
+
+void runBenchmark(Logger& logger, const InputData& data, bool gpu) {
   ExecutorPtr executor;
   BufferPtr buffer;
 
@@ -19,15 +26,11 @@ long long runBenchmark(Logger& logger, bool gpu) {
     buffer = createCpuBuffer();
   }
 
-  Matrix M(64, 32);
-  Vector V(64);
-  Vector A(32);
-  Vector B(32);
-  Vector C(32);
-
-  M.randomize(10.0);
-  V.randomize(10.0);
-  B.randomize(10.0);
+  Matrix M = data.M;
+  Vector V = data.V;
+  Vector B = data.B;
+  Vector A(B.size());
+  Vector C(B.size());
 
   buffer->insert("M", M);
   buffer->insert("V", V);
@@ -50,22 +53,38 @@ long long runBenchmark(Logger& logger, bool gpu) {
 
   ComputationPtr c = executor->compile(*buffer, comp1);
 
-  auto t1 = std::chrono::high_resolution_clock::now();
+  Timer timer;
+  const size_t iterations = 100;
 
-  executor->execute(*buffer, *c);
+  timer.start();
+  executor->execute(*buffer, *c, iterations);
+  auto elapsed = timer.stop();
 
-  auto t2 = std::chrono::high_resolution_clock::now();
-  return duration_cast<std::chrono::microseconds>(t2 - t1).count();
+  logger.info(STR("Running time: " << elapsed / 1000.0 << " milliseconds"));
+
+  //logger.info(STR(C));
 }
 
 int main() {
   LoggerPtr logger = createStdoutLogger();
 
-  long long cpuTime = runBenchmark(*logger, false);
-  long long gpuTime = runBenchmark(*logger, true);
+  InputData data{
+    Matrix(1024, 1024),
+    Vector(1024),
+    Vector(1024)
+  };
+  data.M.fill(1);
+  data.V.fill(1);
+  data.B.fill(1);
+  //data.M.randomize(1.0);
+  //data.V.randomize(1.0);
+  //data.B.randomize(1.0);
 
-  logger->info(STR("CPU running time: " << cpuTime << " microseconds"));
-  logger->info(STR("GPU running time: " << gpuTime << " microseconds"));
+  logger->info("Running CPU benchmark...");
+  runBenchmark(*logger, data, false);
+
+  logger->info("Running GPU benchmark...");
+  runBenchmark(*logger, data, true);
 
   return 0;
 }

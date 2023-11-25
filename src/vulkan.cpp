@@ -167,7 +167,7 @@ ShaderHandle Vulkan::compileShader(const std::string& shaderSource) {
 }
 
 void Vulkan::executeShader(size_t shaderIndex, size_t numWorkgroups) {
-  VK_CHECK(vkDeviceWaitIdle(m_device), "Error waiting for device to be idle");
+  //VK_CHECK(vkDeviceWaitIdle(m_device), "Error waiting for device to be idle");
 
   m_currentPipelineIdx = shaderIndex;
 

@@ -2,6 +2,7 @@
 #include "types.hpp"
 #include "logger.hpp"
 #include "utils.hpp"
+#include "timer.hpp"
 #include "gpu.hpp"
 #include <map>
 #include <fstream>
@@ -67,7 +68,7 @@ using GpuComputationPtr = std::unique_ptr<GpuComputation>;
 
 struct ShaderSnippet {
   std::string command;
-  size_t workgroupSize;
+  size_t workSize;
   std::string source;
 };
 
@@ -145,7 +146,7 @@ ShaderSnippet compileMultiplyCommand(const GpuBuffer& buffer,
       snippet.source = STR("vecScalarMultiply(" << vOffset << ", " << vSize << ", " << x << ", "
         << rOffset << ");");
 
-      snippet.workgroupSize = vSize;
+      snippet.workSize = vSize;
     }
     else {
       EXCEPTION("No function 'multiply' matching argument types");
@@ -169,7 +170,7 @@ ShaderSnippet compileMultiplyCommand(const GpuBuffer& buffer,
       snippet.source = STR("matVecMultiply(" << mOffset << ", " << mCols << ", " << mRows << ", "
         << vOffset << ", " << vSize << ", " << rOffset << ");");
 
-      snippet.workgroupSize = mRows;
+      snippet.workSize = mRows;
     }
     else {
       EXCEPTION("No function 'multiply' matching argument types");
@@ -213,7 +214,7 @@ ShaderSnippet compileAddCommand(const GpuBuffer& buffer, const std::vector<std::
       snippet.source = STR("vecVecAdd(" << aOffset << ", " << bOffset << ", " << aSize << ", "
         << rOffset << ");");
 
-      snippet.workgroupSize = aSize;
+      snippet.workSize = aSize;
     }
     else {
       EXCEPTION("No function 'add' matching argument types");
@@ -256,11 +257,11 @@ class GpuExecutor : public Executor {
     GpuExecutor(Logger& logger);
   
     ComputationPtr compile(const Buffer& buffer, const ComputationDesc& desc) const override;
-    void execute(Buffer& buffer, const Computation& computation) const override;
+    void execute(Buffer& buffer, const Computation& computation,
+      size_t iterations = 1) const override;
 
   private:
-    GpuComputationStep compileStep(std::vector<ShaderSnippet>& snippets,
-      size_t workgroupSize) const;
+    GpuComputationStep compileStep(std::vector<ShaderSnippet>& snippets, size_t workSize) const;
 
     Logger& m_logger;
     GpuPtr m_gpu;
@@ -271,7 +272,10 @@ GpuExecutor::GpuExecutor(Logger& logger)
   , m_gpu(createGpu()) {}
 
 GpuComputationStep GpuExecutor::compileStep(std::vector<ShaderSnippet>& snippets,
-  size_t workgroupSize) const {
+  size_t workSize) const {
+
+  size_t workgroupSize = 32;
+  size_t numWorkgroups = (workSize + workgroupSize - 1) / workgroupSize;
 
   std::ifstream fin("data/functions.glsl");
   std::stringstream commands;
@@ -297,7 +301,7 @@ GpuComputationStep GpuExecutor::compileStep(std::vector<ShaderSnippet>& snippets
 
   GpuComputationStep step;
   step.shader = m_gpu->compileShader(shaderSource.str());
-  step.numWorkgroups = 1; // TODO
+  step.numWorkgroups = numWorkgroups;
   step.commands = commands.str();
 
   return step;
@@ -312,9 +316,9 @@ ComputationPtr GpuExecutor::compile(const Buffer& buffer, const ComputationDesc&
   for (const std::string& command : desc.steps) {
     ShaderSnippet snippet = compileCommand(buffer, command);
 
-    if (snippet.workgroupSize == currentWorkgroupSize || snippets.empty()) {
+    if (snippet.workSize == currentWorkgroupSize || snippets.empty()) {
       snippets.push_back(snippet);
-      currentWorkgroupSize = snippet.workgroupSize;
+      currentWorkgroupSize = snippet.workSize;
     }
     else {
       computation->steps.push_back(compileStep(snippets, currentWorkgroupSize));
@@ -332,19 +336,36 @@ ComputationPtr GpuExecutor::compile(const Buffer& buffer, const ComputationDesc&
   return computation;
 }
 
-void GpuExecutor::execute(Buffer& buf, const Computation& computation) const {
+void GpuExecutor::execute(Buffer& buf, const Computation& computation, size_t iterations) const {
   auto& buffer = dynamic_cast<GpuBuffer&>(buf);
+  int64_t submitTime = 0;
+  int64_t executionTime = 0;
+  int64_t retrievalTime = 0;
+
+  Timer timer;
+  timer.start();
   m_gpu->submitBuffer(buffer.storage.data(), buffer.storage.size() * sizeof(netfloat_t));
+  submitTime = timer.stop();
 
-  const auto& c = dynamic_cast<const GpuComputation&>(computation);
-  for (const auto& step : c.steps) {
+  timer.start();
+  for (size_t i = 0; i < iterations; ++i) {
+    const auto& c = dynamic_cast<const GpuComputation&>(computation);
+    for (const auto& step : c.steps) {
 #ifndef NDEBUG
-    m_logger.info(STR("Executing commands: \n" << step.commands));
+      m_logger.info(STR("Executing commands: \n" << step.commands));
 #endif
-    m_gpu->executeShader(step.shader, step.numWorkgroups);
+      m_gpu->executeShader(step.shader, step.numWorkgroups);
+    }
   }
+  executionTime = timer.stop();
 
+  timer.start();
   m_gpu->retrieveBuffer(buffer.storage.data());
+  retrievalTime = timer.stop();
+
+  //m_logger.info(STR("Submit time = " << submitTime));
+  //m_logger.info(STR("Execution time = " << executionTime));
+  //m_logger.info(STR("Retrieval time = " << retrievalTime));
 }
 
 }
