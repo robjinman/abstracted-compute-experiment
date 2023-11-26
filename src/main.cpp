@@ -41,12 +41,43 @@ void runBenchmark(Logger& logger, const InputData& data, bool gpu) {
   ComputationDesc comp1;
   comp1.steps = {
     "A = multiply M V",
-    "C = add A B"
+    "C = add A B",
+    "C = add C B",
+    "C = add C B",
+    "C = add C B",
+    "C = add C B",
+    "C = add C B",
+    "C = add C B",
+    "C = add C B",
+    "C = add C B",
+    "C = add C B",
+    "C = add C B",
+    "C = add C B",
+    "C = add C B",
+    "C = add C B"
   };
 
   ComputationDesc comp2;
   comp2.steps = {
-    "C = multiply C 2.0"
+    "C = multiply C 2.0",
+    "C = multiply C 2.0",
+    "C = multiply C 2.0",
+    "C = multiply C 0.5",
+    "C = multiply C 0.5",
+    "C = multiply C 0.5",
+    "C = multiply C 0.5",
+    "C = multiply C 0.5",
+    "C = multiply C 2.0",
+    "C = multiply C 2.0",
+    "C = multiply C 2.0",
+    "C = multiply C 2.0",
+    "C = multiply C 2.0",
+    "C = multiply C 2.0",
+    "C = multiply C 0.5",
+    "C = multiply C 0.5",
+    "C = multiply C 0.5",
+    "C = multiply C 0.5",
+    "C = multiply C 0.5"
   };
 
   comp1.chain(comp2);
@@ -54,10 +85,8 @@ void runBenchmark(Logger& logger, const InputData& data, bool gpu) {
   ComputationPtr c = executor->compile(*buffer, comp1);
 
   Timer timer;
-  const size_t iterations = 100;
-
   timer.start();
-  executor->execute(*buffer, *c, iterations);
+  executor->execute(*buffer, *c);
   auto elapsed = timer.stop();
 
   logger.info(STR("Running time: " << elapsed / 1000.0 << " milliseconds"));
@@ -69,9 +98,9 @@ int main() {
   LoggerPtr logger = createStdoutLogger();
 
   InputData data{
-    Matrix(1024, 1024),
-    Vector(1024),
-    Vector(1024)
+    Matrix(4096, 4096),
+    Vector(4096),
+    Vector(4096)
   };
   data.M.fill(1);
   data.V.fill(1);

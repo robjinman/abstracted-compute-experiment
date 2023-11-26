@@ -62,8 +62,7 @@ class CpuExecutor : public Executor {
     CpuExecutor(Logger& logger);
   
     ComputationPtr compile(const Buffer& buffer, const ComputationDesc& desc) const override;
-    void execute(Buffer& buffer, const Computation& computation,
-      size_t iterations = 1) const override;
+    void execute(Buffer& buffer, const Computation& computation) const override;
 
   private:
     Logger& m_logger;
@@ -247,15 +246,13 @@ ComputationPtr CpuExecutor::compile(const Buffer& buffer, const ComputationDesc&
   return computation;
 }
 
-void CpuExecutor::execute(Buffer&, const Computation& computation, size_t iterations) const {
+void CpuExecutor::execute(Buffer&, const Computation& computation) const {
   const auto& c = dynamic_cast<const CpuComputation&>(computation);
-  for (size_t i = 0; i < iterations; ++i) {
-    for (const auto& step : c.steps) {
+  for (const auto& step : c.steps) {
 #ifndef NDEBUG
-      m_logger.info(STR("Executing command: " << step.command));
+    m_logger.info(STR("Executing command: " << step.command));
 #endif
-      step.function();
-    }
+    step.function();
   }
 }
 

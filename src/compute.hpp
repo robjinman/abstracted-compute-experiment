@@ -32,8 +32,7 @@ using ComputationPtr = std::unique_ptr<Computation>;
 class Executor {
   public:
     virtual ComputationPtr compile(const Buffer& buffer, const ComputationDesc& desc) const = 0;
-    virtual void execute(Buffer& buffer, const Computation& computation,
-      size_t iterations = 1) const = 0;
+    virtual void execute(Buffer& buffer, const Computation& computation) const = 0;
 
     virtual ~Executor() {}
 };

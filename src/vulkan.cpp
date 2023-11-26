@@ -58,6 +58,7 @@ class Vulkan : public Gpu {
     void createSyncObjects();
     void destroyDebugMessenger();
     void destroyBuffer();
+    void destroyStagingBuffer();
     VkShaderModule createShaderModule(const std::string& source) const;
     inline VkPipeline currentPipeline() const;
 
@@ -69,6 +70,8 @@ class Vulkan : public Gpu {
     VkBuffer m_buffer;
     VkDeviceMemory m_bufferMemory;
     VkDeviceSize m_bufferSize;
+    VkBuffer m_stagingBuffer;
+    VkDeviceMemory m_stagingBufferMemory;
     VkDescriptorSetLayout m_descriptorSetLayout;
     VkPipelineLayout m_pipelineLayout;
     std::vector<VkPipeline> m_pipelines;
@@ -83,7 +86,9 @@ class Vulkan : public Gpu {
 Vulkan::Vulkan()
   : m_buffer(VK_NULL_HANDLE)
   , m_bufferMemory(VK_NULL_HANDLE)
-  , m_bufferSize(0) {
+  , m_bufferSize(0)
+  , m_stagingBuffer(VK_NULL_HANDLE)
+  , m_stagingBufferMemory(VK_NULL_HANDLE) {
 
   createVulkanInstance();
 #ifndef NDEBUG
@@ -107,6 +112,13 @@ void Vulkan::destroyBuffer() {
     m_bufferSize = 0;
 }
 
+void Vulkan::destroyStagingBuffer() {
+  vkDestroyBuffer(m_device, m_stagingBuffer, nullptr);
+  vkFreeMemory(m_device, m_stagingBufferMemory, nullptr);
+  m_stagingBuffer = VK_NULL_HANDLE;
+  m_stagingBufferMemory = VK_NULL_HANDLE;
+}
+
 void Vulkan::submitBuffer(const void* data, size_t size) {
   VK_CHECK(vkDeviceWaitIdle(m_device), "Error waiting for device to be idle");
 
@@ -114,28 +126,27 @@ void Vulkan::submitBuffer(const void* data, size_t size) {
     destroyBuffer();
   }
 
-  VkBuffer stagingBuffer;
-  VkDeviceMemory stagingBufferMemory;
+  if (m_stagingBuffer != VK_NULL_HANDLE) {
+    destroyStagingBuffer();
+  }
+
   createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-    stagingBuffer, stagingBufferMemory);
+    m_stagingBuffer, m_stagingBufferMemory);
 
-  void* bufferData = nullptr;
-  vkMapMemory(m_device, stagingBufferMemory, 0, size, 0, &bufferData);
-  memcpy(bufferData, data, size);
-  vkUnmapMemory(m_device, stagingBufferMemory);
+  void* stagingBufferMapped = nullptr;
+  vkMapMemory(m_device, m_stagingBufferMemory, 0, size, 0, &stagingBufferMapped);
+  memcpy(stagingBufferMapped, data, size);
+  vkUnmapMemory(m_device, m_stagingBufferMemory);
 
   VkBufferUsageFlags usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT
                            | VK_BUFFER_USAGE_TRANSFER_SRC_BIT
                            | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
   createBuffer(size, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_buffer, m_bufferMemory);
 
-  copyBuffer(stagingBuffer, m_buffer, size);
+  copyBuffer(m_stagingBuffer, m_buffer, size);
 
   m_bufferSize = size;
-
-  vkDestroyBuffer(m_device, stagingBuffer, nullptr);
-  vkFreeMemory(m_device, stagingBufferMemory, nullptr);
 
   createDescriptorSets();
 }
@@ -189,27 +200,20 @@ void Vulkan::executeShader(size_t shaderIndex, size_t numWorkgroups) {
 }
 
 void Vulkan::retrieveBuffer(void* data) {
-  VK_CHECK(vkDeviceWaitIdle(m_device), "Error waiting for device to be idle");
+//  VK_CHECK(vkDeviceWaitIdle(m_device), "Error waiting for device to be idle");
 
   if (m_buffer == VK_NULL_HANDLE) {
     EXCEPTION("Error retrieving buffer; Buffer has not been created yet");
   }
 
-  VkBuffer stagingBuffer;
-  VkDeviceMemory stagingBufferMemory;
-  createBuffer(m_bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-    stagingBuffer, stagingBufferMemory);
+  DBG_ASSERT(m_stagingBuffer != VK_NULL_HANDLE);
 
-  copyBuffer(m_buffer, stagingBuffer, m_bufferSize);
+  copyBuffer(m_buffer, m_stagingBuffer, m_bufferSize);
 
-  void* bufferData = nullptr;
-  vkMapMemory(m_device, stagingBufferMemory, 0, m_bufferSize, 0, &bufferData);
-  memcpy(data, bufferData, m_bufferSize);
-  vkUnmapMemory(m_device, stagingBufferMemory);
-
-  vkDestroyBuffer(m_device, stagingBuffer, nullptr);
-  vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+  void* stagingBufferMapped = nullptr;
+  vkMapMemory(m_device, m_stagingBufferMemory, 0, m_bufferSize, 0, &stagingBufferMapped);
+  memcpy(data, stagingBufferMapped, m_bufferSize);
+  vkUnmapMemory(m_device, m_stagingBufferMemory);
 }
 
 VkPipeline Vulkan::currentPipeline() const {
@@ -613,6 +617,7 @@ Vulkan::~Vulkan() {
   }
   vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
   destroyBuffer();
+  destroyStagingBuffer();
   vkDestroyDescriptorPool(m_device, m_descriptorPool, nullptr);
   vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayout, nullptr);
 #ifndef NDEBUG

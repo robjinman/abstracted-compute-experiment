@@ -257,8 +257,7 @@ class GpuExecutor : public Executor {
     GpuExecutor(Logger& logger);
   
     ComputationPtr compile(const Buffer& buffer, const ComputationDesc& desc) const override;
-    void execute(Buffer& buffer, const Computation& computation,
-      size_t iterations = 1) const override;
+    void execute(Buffer& buffer, const Computation& computation) const override;
 
   private:
     GpuComputationStep compileStep(std::vector<ShaderSnippet>& snippets, size_t workSize) const;
@@ -336,7 +335,7 @@ ComputationPtr GpuExecutor::compile(const Buffer& buffer, const ComputationDesc&
   return computation;
 }
 
-void GpuExecutor::execute(Buffer& buf, const Computation& computation, size_t iterations) const {
+void GpuExecutor::execute(Buffer& buf, const Computation& computation) const {
   auto& buffer = dynamic_cast<GpuBuffer&>(buf);
   int64_t submitTime = 0;
   int64_t executionTime = 0;
@@ -348,14 +347,12 @@ void GpuExecutor::execute(Buffer& buf, const Computation& computation, size_t it
   submitTime = timer.stop();
 
   timer.start();
-  for (size_t i = 0; i < iterations; ++i) {
-    const auto& c = dynamic_cast<const GpuComputation&>(computation);
-    for (const auto& step : c.steps) {
+  const auto& c = dynamic_cast<const GpuComputation&>(computation);
+  for (const auto& step : c.steps) {
 #ifndef NDEBUG
-      m_logger.info(STR("Executing commands: \n" << step.commands));
+    m_logger.info(STR("Executing commands: \n" << step.commands));
 #endif
-      m_gpu->executeShader(step.shader, step.numWorkgroups);
-    }
+    m_gpu->executeShader(step.shader, step.numWorkgroups);
   }
   executionTime = timer.stop();
 
@@ -363,9 +360,9 @@ void GpuExecutor::execute(Buffer& buf, const Computation& computation, size_t it
   m_gpu->retrieveBuffer(buffer.storage.data());
   retrievalTime = timer.stop();
 
-  //m_logger.info(STR("Submit time = " << submitTime));
-  //m_logger.info(STR("Execution time = " << executionTime));
-  //m_logger.info(STR("Retrieval time = " << retrievalTime));
+  m_logger.info(STR("Submit time = " << submitTime));
+  m_logger.info(STR("Execution time = " << executionTime));
+  m_logger.info(STR("Retrieval time = " << retrievalTime));
 }
 
 }
