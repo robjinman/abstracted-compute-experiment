@@ -130,9 +130,12 @@ void Vulkan::submitBuffer(const void* data, size_t size) {
     destroyStagingBuffer();
   }
 
-  createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-    m_stagingBuffer, m_stagingBufferMemory);
+  VkMemoryPropertyFlags flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+                              | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+                              | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+
+  createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, flags, m_stagingBuffer,
+    m_stagingBufferMemory);
 
   void* stagingBufferMapped = nullptr;
   vkMapMemory(m_device, m_stagingBufferMemory, 0, size, 0, &stagingBufferMapped);
